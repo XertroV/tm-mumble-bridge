@@ -1,0 +1,42 @@
+[package]
+name = "tm-mumble-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tm-mumble-bridge"
+path = "src/main.rs"
+
+[[bin]]
+name = "tm-murmur-mgr"
+path = "src/murmur.rs"
+
+[features]
+wayland = ["eframe/wayland"]
+glow = ["eframe/glow"]
+
+[dependencies]
+byteorder = "1.5.0"
+eframe = { version = "0.30", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "x11",
+    "serde",
+    "wgpu",
+    # "persistence",
+] }
+# "persistence"
+egui = { version = "0.30", features = ["serde", "accesskit"] }
+egui_extras = "0.30.0"
+lazy_static = "1.5"
+# libc = "0.2.169"
+message-io = { version = "0.18", default-features = false, features = ["tcp"] }
+mumble-link = "0.2"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+sysinfo = "0.30.12"
+tokio = { version = "1.38.0", features = ["full"] }
+tokio-macros = "2.3.0"
+tray-icon = "0.19" # 14.3
+windows = { version = "0.57.0", features = ["Win32", "Win32_UI", "Win32_UI_WindowsAndMessaging"] }
+winit = "0.30.1"

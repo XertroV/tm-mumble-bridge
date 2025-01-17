@@ -1,0 +1,37 @@
+services:
+    mumble-server:
+        image: mumblevoip/mumble-server:latest
+        container_name: mumble-server
+        hostname: mumble-server
+        restart: always
+        ports:
+            - 64738:64738
+            - 64738:64738/udp
+        expose:
+            - 15206
+        environment:
+            - MUMBLE_CONFIG_SERVER_PASSWORD=iloveopenplanet
+            - MUMBLE_CONFIG_REGISTER_NAME="TM Proximity Chat"
+            - MUMBLE_CONFIG_WELCOMETEXT="Welcome to the TM Proximity Chat server!<br />Contact @XertroV on discord for issues."
+            - MUMBLE_CONFIG_PORT=64738
+            # - MUMBLE_CONFIG_SERVER_HOST=proximity.xk.io
+            - MUMBLE_CONFIG_ICE="tcp -h 0.0.0.0 -p 15206"
+            - MUMBLE_CONFIG_SSL_CERT=/data/cert
+            - MUMBLE_CONFIG_SSL_KEY=/data/key
+            - MUMBLE_CONFIG_USERS=500
+            # - MUMBLE_SERVER_REGISTER_NAME=TM Proximity Chat
+            # - MUMBLE_SERVER_REGISTER_URL=https://proximity.xk.io
+            # - MUMBLE_SERVER_REGISTER_HOST=proximity.xk.io
+            # - MUMBLE_SERVER_REGISTER_PASSWORD=yourpassword
+            - MUMBLE_SERVER_DATABASE=sqlite
+        volumes:
+            - ./mumble-server-data:/data
+    tm-umo:
+        image: tm-umo
+        container_name: tm-umo
+        restart: always
+        volumes:
+            - ./tm-umo-data:/data
+        network_mode : "service:mumble-server"
+        depends_on:
+            - mumble-server
