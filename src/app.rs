@@ -22,6 +22,12 @@ pub enum ToGUI {
     FromTM(FromTM)
 }
 
+impl From<FromTM> for ToGUI {
+    fn from(from_tm: FromTM) -> Self {
+        ToGUI::FromTM(from_tm)
+    }
+}
+
 pub enum FromGuiToServer {
     TryConnectMumble(),
 }
@@ -50,6 +56,7 @@ impl App for MumbleBridgeApp {
         self.render_main_body(ctx, frame);
         self.render_main_footer(ctx, frame);
         ctx.request_repaint_after(Duration::from_millis(50));
+
         // frame.set_window_size(Vec2::new(400.0, 240.0));
         // let x = frame.display_handle().unwrap();
         // let x = frame.window_handle().unwrap();
@@ -163,6 +170,7 @@ impl MumbleBridgeApp {
             }
             if self.connected {
                 self.ui_listening_on(ui);
+                self.ui_tm_game_status(ui);
                 self.ui_last_positions(ui);
                 self.ui_curr_details(ui);
             } else {
@@ -247,6 +255,14 @@ impl MumbleBridgeApp {
             "✅"
         } else {
             "❌"
+        });
+    }
+
+    fn ui_tm_game_status(&self, ui: &mut egui::Ui) {
+        ui.label(if self.client_connected {
+            "TM Plugin: ✅"
+        } else {
+            "TM Plugin: ❌"
         });
     }
 

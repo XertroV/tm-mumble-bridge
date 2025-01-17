@@ -3519,6 +3519,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "lazy_static",
+ "log",
  "message-io",
  "mumble-link",
  "serde",

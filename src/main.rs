@@ -37,8 +37,8 @@ fn main() {
         .with_maximize_button(false);
     nat_opts.renderer = Renderer::Wgpu;
 
-    let (from_tm_tx, from_tm_rx) = std::sync::mpsc::channel::<FromTM>();
-    let (to_tm_tx, to_tm_rx) = std::sync::mpsc::channel::<ToTM>();
+    // let (from_tm_tx, from_tm_rx) = std::sync::mpsc::channel::<FromTM>();
+    // let (to_tm_tx, to_tm_rx) = std::sync::mpsc::channel::<ToTM>();
 
     let pos = FromTM::Positions { p: MPos::example(1.0), c: MPos::example(2.0) };
     let pos_str = serde_json::to_string(&pos).unwrap();
@@ -69,7 +69,7 @@ fn main() {
 
     let to_gui_tx2 = to_gui_tx.clone();
     std::thread::spawn(|| {
-        tcp_server::server_main("", 0, from_tm_tx, to_tm_rx, to_gui_tx2, from_gui_rx);
+        tcp_server::server_main("", 0, to_gui_tx2, from_gui_rx);
     });
 
     eframe::run_native(

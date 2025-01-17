@@ -96,7 +96,7 @@ pub enum ToTM {
 
 type LE = LittleEndian;
 
-pub fn server_main(ip_addr: &str, port: u16, tx: Sender<FromTM>, rx: Receiver<ToTM>, to_gui: Sender<ToGUI>, from_gui: Receiver<FromGuiToServer>) {
+pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Receiver<FromGuiToServer>) {
     let ip_addr = if ip_addr.is_empty() {"127.0.0.1"} else {ip_addr};
     let port = if port == 0 { DEFAULT_PORT } else { port };
 
@@ -128,13 +128,16 @@ pub fn server_main(ip_addr: &str, port: u16, tx: Sender<FromTM>, rx: Receiver<To
     let player_name = Arc::new(RwLock::new(String::new()));
     let server_login = Arc::new(RwLock::new(String::new()));
     let server_team = Arc::new(RwLock::new(String::new()));
+    let update_nonce = Arc::new(RwLock::new(0));
 
     let update_context = |mumble: &mut MumbleLink| {
-        mumble.set_identity((player_name.read().unwrap().clone() + "|" + &player_login.read().unwrap()).as_str());
-        mumble.set_context((server_login.read().unwrap().clone() + "|" + &server_team.read().unwrap()).as_bytes());
+        let un = *update_nonce.read().unwrap();
+        mumble.set_identity(format!("{}|{}|{}", &player_name.read().unwrap(), &player_login.read().unwrap(), &un).as_str());
+        mumble.set_context(format!("TM|{}|{}|{}", &server_login.read().unwrap(), &server_team.read().unwrap(), &un).as_bytes());
+        *update_nonce.write().unwrap() += 1;
     };
 
-    let pl = player_login.clone();
+    let pl: Arc<RwLock<String>> = player_login.clone();
     let pn = player_name.clone();
     let sl = server_login.clone();
     let st = server_team.clone();
@@ -186,13 +189,14 @@ pub fn server_main(ip_addr: &str, port: u16, tx: Sender<FromTM>, rx: Receiver<To
                             }
                             m@FromTM::LeftServer() => {
                                 *sl.write().unwrap() = String::new();
-                                *st.write().unwrap() = String::new();
+                                *st.write().unwrap() = "All".to_string();
                                 update_context(mumble);
                                 to_gui.send(ToGUI::FromTM(m)).unwrap();
                             }
                             m@FromTM::Ping() => {
                                 handler.network().send(_endpoint, serde_json::to_string(&ToTM::Ping()).unwrap().as_bytes());
                                 to_gui.send(ToGUI::FromTM(m)).unwrap();
+                                update_context(mumble);
                             }
                             FromTM::NetConnected(_, _) | FromTM::NetDisconnected(_) | FromTM::NetAccepted(_) => {
                                 eprintln!("Unexpected message: {:?}", from_tm);
@@ -208,17 +212,23 @@ pub fn server_main(ip_addr: &str, port: u16, tx: Sender<FromTM>, rx: Receiver<To
             }
             NetEvent::Connected(_endpoint, connection_success) => {
                 println!("Client connected");
-                tx.send(FromTM::NetConnected(_endpoint.addr(), connection_success)).unwrap();
+                to_gui.send(FromTM::NetConnected(_endpoint.addr(), connection_success).into()).unwrap();
                 unreachable!();
                 // handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
             NetEvent::Disconnected(_endpoint) => {
                 println!("Client disconnected");
-                tx.send(FromTM::NetDisconnected(_endpoint.addr())).unwrap();
+                match to_gui.send(FromTM::NetDisconnected(_endpoint.addr()).into()) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        eprintln!("GUI channel disconnected");
+                        handler.stop();
+                    },
+                }
             }
             NetEvent::Accepted(_endpoint, _listener) => {
                 println!("Client accepted");
-                tx.send(FromTM::NetAccepted(_endpoint.addr())).unwrap();
+                to_gui.send(FromTM::NetAccepted(_endpoint.addr()).into()).unwrap();
                 handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
         }
