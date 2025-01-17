@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, SendError, Sender, TryRecvError};
 use std::sync::{Arc, RwLock};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use message_io::node::{self};
-use message_io::network::{Endpoint, NetEvent, Transport};
+use message_io::network::{NetEvent, Transport};
 use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
 
@@ -104,7 +104,7 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
     let (handler, listener) = node::split::<()>();
 
     handler.network().listen(Transport::FramedTcp, &format!("{}:{}", ip_addr, port)).unwrap();
-    println!("Listening on {}:{}", ip_addr, port);
+    log::info!("Listening on {}:{}", ip_addr, port);
     to_gui.send(ToGUI::ListeningOn(ip_addr.to_string(), port)).unwrap();
 
     let mumble: Arc<RwLock<std::io::Result<MumbleLink>>> = Arc::new(RwLock::new(Err(std::io::Error::new(std::io::ErrorKind::Other, "Mumble not connected"))));
@@ -118,12 +118,12 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
-                eprintln!("GUI channel disconnected");
+                log::warn!("GUI channel disconnected");
                 break;
             }
         }
     }
-    println!("Mumble connected");
+    log::info!("Mumble connected");
 
     let player_login = Arc::new(RwLock::new(String::new()));
     let player_name = Arc::new(RwLock::new(String::new()));
@@ -156,7 +156,7 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                             to_gui.send(ToGUI::FromTM(from_tm)).unwrap();
                         }
                         Err(e) => {
-                            eprintln!("Error parsing position message: {}", e);
+                            log::warn!("Error parsing position message: {}", e);
                             to_gui.send(ToGUI::ProtocolError(format!("Error parsing position message: {}", e))).unwrap();
                         }
                     }
@@ -164,8 +164,8 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                 }
                 let json_raw = String::from_utf8_lossy(&data);
                 if !json_raw.starts_with("{\"Positions\":") {
-                    println!("Received: {:?}", &json_raw);
-                    println!("Received len: {}", data.len());
+                    log::info!("Received: {:?}", &json_raw);
+                    log::info!("Received len: {}", data.len());
                 }
                 match serde_json::from_str::<FromTM>(&json_raw) {
                     Ok(from_tm) => {
@@ -210,35 +210,45 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                                 }
                             }
                             FromTM::NetConnected(_, _) | FromTM::NetDisconnected(_) | FromTM::NetAccepted(_) => {
-                                eprintln!("Unexpected message: {:?}", from_tm);
+                                log::warn!("Unexpected message: {:?}", from_tm);
                                 to_gui.send(ToGUI::ProtocolError(format!("Unexpected message: {:?}", from_tm))).unwrap();
                             }
                         }
                     },
                     Err(e) => {
-                        eprintln!("Error parsing message: {}", e);
+                        log::warn!("Error parsing message: {}", e);
                         to_gui.send(ToGUI::ProtocolError(format!("Error parsing message: {}", e))).unwrap();
                     }
                 }
             }
             NetEvent::Connected(_endpoint, connection_success) => {
-                println!("Client connected");
+                log::info!("Client connected");
                 to_gui.send(FromTM::NetConnected(_endpoint.addr(), connection_success).into()).unwrap();
                 unreachable!();
                 // handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
             NetEvent::Disconnected(_endpoint) => {
-                println!("Client disconnected");
-                match to_gui.send(FromTM::NetDisconnected(_endpoint.addr()).into()) {
+                let mut mumble_w = mumble.write().unwrap();
+                let mumble = mumble_w.as_mut().unwrap();
+                log::info!("Client disconnected");
+                *sl.write().unwrap() = String::new();
+                *st.write().unwrap() = "All".to_string();
+                update_context(mumble);
+                let r: Result<_, SendError<_>> = (|| {
+                    to_gui.send(FromTM::LeftServer().into())?;
+                    to_gui.send(FromTM::NetDisconnected(_endpoint.addr()).into())?;
+                    Ok(())
+                })();
+                match r {
                     Ok(_) => {},
                     Err(_) => {
-                        eprintln!("GUI channel disconnected");
+                        log::warn!("GUI channel disconnected");
                         handler.stop();
                     },
                 }
             }
             NetEvent::Accepted(_endpoint, _listener) => {
-                println!("Client accepted");
+                log::info!("Client accepted");
                 to_gui.send(FromTM::NetAccepted(_endpoint.addr()).into()).unwrap();
                 handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
@@ -250,7 +260,7 @@ fn try_connect_mumble(mumble: &Arc<RwLock<std::io::Result<MumbleLink>>>, to_gui:
     let mut mumble_w = mumble.write().unwrap();
     match mumble_w.as_ref() {
         Ok(_) => {
-            eprintln!("Mumble already connected");
+            log::warn!("Mumble already connected");
             to_gui.send(ToGUI::MumbleError("Mumble already connected".to_string())).unwrap();
         }
         Err(_) => {

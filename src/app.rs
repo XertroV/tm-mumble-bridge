@@ -1,26 +1,27 @@
-use std::{sync::{mpsc::{Receiver, Sender}, OnceLock}, time::{Duration, Instant}};
+use std::{
+    sync::{
+        mpsc::{Receiver, Sender},
+        OnceLock,
+    },
+    time::{Duration, Instant},
+};
 
+use crate::tcp_server::FromTM;
 use eframe::App;
-use egui::{Layout, Rect};
 use egui_extras::{Column, TableBuilder};
-use mumble_link::MumbleLink;
 use serde::{Deserialize, Serialize};
-use windows::Win32::Foundation::HWND;
-use winit::{raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::Window};
-
-use crate::{get_window_handle, set_window_visible, tcp_server::FromTM};
 
 const MUMBLE_SCALE_INV: f32 = 32.0;
 
 #[derive(Debug, Clone)]
 pub enum ToGUI {
-    TaskBarIconMsg(String),
+    // TaskBarIconMsg(String),
     IsConnected(bool),
     MumbleError(String),
     ListeningOn(String, u16),
     ProtocolError(String),
     FromTM(FromTM),
-    HideMainWindow()
+    // HideMainWindow()
 }
 
 impl From<FromTM> for ToGUI {
@@ -90,104 +91,122 @@ impl Default for MumbleBridgeApp<'_> {
 }
 
 impl MumbleBridgeApp<'_> {
-    pub fn new<'a>(rx_gui: &'a mut Receiver<ToGUI>, tx_gui: Sender<FromGuiToServer>, shutdown_tx: Sender<()>) -> MumbleBridgeApp<'a> {
+    pub fn new<'a>(
+        rx_gui: &'a mut Receiver<ToGUI>,
+        tx_gui: Sender<FromGuiToServer>,
+        shutdown_tx: Sender<()>,
+    ) -> MumbleBridgeApp<'a> {
         let app = MumbleBridgeApp::default();
         app.rx_gui.set(rx_gui).expect("Failed to set rx_gui");
         app.tx_gui.set(tx_gui).expect("Failed to set tx_gui");
-        app.shutdown_tx.set(shutdown_tx).expect("Failed to set shutdown_tx");
+        app.shutdown_tx
+            .set(shutdown_tx)
+            .expect("Failed to set shutdown_tx");
         app
     }
 
-    fn hide_main_window(&self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // let mut shutdown_tx = self.shutdown_tx.get().expect("shutdown_tx not set");
-        // shutdown_tx.send(()).expect("to send shutdown");
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-    }
-
-    fn _update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let mut hide_window = false;
+    fn _update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let mut reset_error_msg = false;
         if let Some(rx) = self.rx_gui.get_mut() {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
-                    ToGUI::TaskBarIconMsg(msg) => {
-                        self.e_state.last_task_bar_msg = msg;
-                    },
+                    // ToGUI::TaskBarIconMsg(msg) => {
+                    //     self.e_state.last_task_bar_msg = msg;
+                    // },
                     ToGUI::IsConnected(is_connected) => {
                         self.connected = is_connected;
-                    },
+                    }
                     ToGUI::MumbleError(e) => {
                         self.e_state.last_error_msg = e;
-                    },
+                        self.e_state.last_error_msg_time = Instant::now();
+                    }
                     ToGUI::ListeningOn(ip, port) => {
                         self.e_state.listening = Some((ip, port));
-                    },
+                    }
                     ToGUI::ProtocolError(e) => {
                         self.e_state.last_error_msg = e;
-                    },
-                    ToGUI::HideMainWindow() => {
-                        hide_window = true;
-                    },
-                    ToGUI::FromTM(from_tm) => {
-                        match from_tm {
-                            FromTM::Positions { p, c } => {
-                                self.e_state.last_player_pos = vec_flip_z(vecm(p.pos, MUMBLE_SCALE_INV));
-                                self.e_state.last_camera_pos = vec_flip_z(vecm(c.pos, MUMBLE_SCALE_INV));
-                                self.e_state.last_update = Instant::now();
-                            },
-                            FromTM::LeftServer() => {
-                                self.in_server = false;
-                            },
-                            FromTM::PlayerDetails(name, login) => {
-                                self.player_name = name;
-                                self.player_login = login;
-                            },
-                            FromTM::ServerDetails(server, team) => {
-                                self.server_login = server;
-                                self.server_team = team;
-                            }
-                            FromTM::Ping() => {
-                                self.e_state.last_ping = Instant::now();
-                            }
-                            FromTM::NetAccepted(_) => {
-                                self.client_connected = true;
-                            },
-                            FromTM::NetDisconnected(_) => {
-                                self.client_connected = false;
-                            }
-                            _ => {}
-                        }
+                        self.e_state.last_error_msg_time = Instant::now();
                     }
+                    // ToGUI::HideMainWindow() => {
+                    //     hide_window = true;
+                    // },
+                    ToGUI::FromTM(from_tm) => match from_tm {
+                        FromTM::Positions { p, c } => {
+                            self.e_state.last_player_pos =
+                                vec_flip_z(vecm(p.pos, MUMBLE_SCALE_INV));
+                            self.e_state.last_camera_pos =
+                                vec_flip_z(vecm(c.pos, MUMBLE_SCALE_INV));
+                            self.e_state.last_update = Instant::now();
+                        }
+                        FromTM::LeftServer() => {
+                            self.in_server = false;
+                            self.server_login = String::new();
+                            self.server_team = "All".into();
+                        }
+                        FromTM::PlayerDetails(name, login) => {
+                            self.player_name = name;
+                            self.player_login = login;
+                        }
+                        FromTM::ServerDetails(server, team) => {
+                            self.server_login = server;
+                            self.server_team = team;
+                        }
+                        FromTM::Ping() => {
+                            self.e_state.last_ping = Instant::now();
+                        }
+                        FromTM::NetAccepted(_) => {
+                            self.client_connected = true;
+                            reset_error_msg = true;
+                        }
+                        FromTM::NetDisconnected(_) => {
+                            self.client_connected = false;
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
-        if hide_window {
-            self.hide_main_window(ctx, frame);
+        if reset_error_msg {
+            self.reset_err_msg();
+        }
+        if ctx.input(|i| i.viewport().close_requested()) {
+            log::info!("Close requested");
         }
     }
 
-    fn render_main_top(&self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn reset_err_msg(&mut self) {
+        self.e_state.last_error_msg = String::new();
+    }
+
+    fn render_main_top(&self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("TM to Mumble: Proximity Chat");
-                self.ui_status(ui);
+                self.ui_mumble_status_small(ui);
                 self.ui_version(ui);
             });
         });
     }
 
-    fn render_main_body(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn render_main_body(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            if ui.button("Minimize to tray icon").clicked() {
-                set_window_visible(get_window_handle(), false);
-            }
+            // if ui.button("Minimize to tray icon").clicked() {
+            //     set_window_visible(ctx, false);
+            //     // self.hide_main_window(ctx, frame);
+            // }
             if self.connected {
                 self.ui_listening_on(ui);
+                self.ui_mumble_status(ui);
                 self.ui_tm_game_status(ui);
                 self.ui_last_positions(ui);
                 self.ui_curr_details(ui);
             } else {
                 if ui.button("Connect to Mumble").clicked() {
-                    self.tx_gui.get().expect("tx_gui not set").send(FromGuiToServer::TryConnectMumble()).expect("to send to server");
+                    self.tx_gui
+                        .get()
+                        .expect("tx_gui not set")
+                        .send(FromGuiToServer::TryConnectMumble())
+                        .expect("to send to server");
                     self.e_state.last_error_msg = String::new();
                 }
             }
@@ -196,33 +215,39 @@ impl MumbleBridgeApp<'_> {
         });
     }
 
-    fn render_main_footer(&self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn render_main_footer(&self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             // ui.with_layout(
             //     egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
             ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                        self.ui_status(ui);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                    ui.horizontal_centered(|ui| {
+                        self.ui_mumble_status_small(ui);
+                        ui.separator();
+                        self.ui_tm_game_status_small(ui);
                         ui.separator();
                     });
+                });
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                        ui.horizontal_centered(|ui| {
-                            self.ui_version(ui);
-                            ui.separator();
-                            self.last_update(ui);
-                            ui.separator();
-                            self.last_ping(ui);
-                            ui.separator();
-                        });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    ui.horizontal_centered(|ui| {
+                        self.ui_version(ui);
+                        ui.separator();
+                        self.last_update(ui);
+                        ui.separator();
+                        self.last_ping(ui);
+                        ui.separator();
                     });
-                },
-            );
+                });
+            });
         });
     }
 
     fn ui_curr_details(&self, ui: &mut egui::Ui) {
-        ui.label(format!("Player: {} | {}", self.player_name, self.player_login));
+        ui.label(format!(
+            "Player: {} | {}",
+            self.player_name, self.player_login
+        ));
         ui.label(format!("Server: {}", self.server_login));
         ui.label(format!("Team: {}", self.server_team));
     }
@@ -233,26 +258,25 @@ impl MumbleBridgeApp<'_> {
         ui.label("Last positions:");
         ui.indent("poss", |ui| {
             TableBuilder::new(ui)
-            .column(Column::auto().resizable(true))
-            .column(Column::remainder())
-            .auto_shrink([true, true])
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-
-            .body(|mut body| {
-                body.rows(16.0, 2, |mut row| {
-                    let (label, val) = match row.index() {
-                        0 => ("Player", p1.clone()),
-                        1 => ("Camera", p2.clone()),
-                        _ => unreachable!(),
-                    };
-                    row.col(|ui| {
-                        ui.label(label);
-                    });
-                    row.col(|ui| {
-                        ui.label(val);
+                .column(Column::auto().resizable(true))
+                .column(Column::remainder())
+                .auto_shrink([true, true])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                .body(|body| {
+                    body.rows(16.0, 2, |mut row| {
+                        let (label, val) = match row.index() {
+                            0 => ("Player", p1.clone()),
+                            1 => ("Camera", p2.clone()),
+                            _ => unreachable!(),
+                        };
+                        row.col(|ui| {
+                            ui.label(label);
+                        });
+                        row.col(|ui| {
+                            ui.label(val);
+                        });
                     });
                 });
-            });
         });
     }
 
@@ -262,12 +286,20 @@ impl MumbleBridgeApp<'_> {
         }
     }
 
-    fn ui_status(&self, ui: &mut egui::Ui) {
+    fn ui_mumble_status_small(&self, ui: &mut egui::Ui) {
+        ui.label(if self.connected { "M: ✅" } else { "M: ❌" });
+    }
+
+    fn ui_mumble_status(&self, ui: &mut egui::Ui) {
         ui.label(if self.connected {
-            "✅"
+            "Mumble: ✅"
         } else {
-            "❌"
+            "Mumble: ❌"
         });
+    }
+
+    fn ui_tm_game_status_small(&self, ui: &mut egui::Ui) {
+        ui.label(if self.client_connected { "TM: ✅" } else { "TM: ❌" });
     }
 
     fn ui_tm_game_status(&self, ui: &mut egui::Ui) {
@@ -324,6 +356,7 @@ struct MumbleBridgeEphemeralState {
     last_update: Instant,
     last_ping: Instant,
     last_error_msg: String,
+    last_error_msg_time: Instant,
     last_task_bar_msg: String,
     last_player_pos: [f32; 3],
     last_camera_pos: [f32; 3],
@@ -336,6 +369,7 @@ impl Default for MumbleBridgeEphemeralState {
             last_update: Instant::now(),
             last_ping: Instant::now(),
             last_error_msg: String::new(),
+            last_error_msg_time: Instant::now(),
             last_task_bar_msg: String::new(),
             last_player_pos: [-1.0, -1.0, -1.0],
             last_camera_pos: [-1.0, -1.0, -1.0],
