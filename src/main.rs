@@ -13,15 +13,23 @@ use tcp_server::{FromTM, MPos, ToTM};
 // use shmem_bind::{self as shmem, ShmemBox, ShmemError};
 // use sysinfo::{ProcessRefreshKind, System};
 use tray_icon::{menu::{self, accelerator::{self, Accelerator}, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem}, Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg(windows)]
 use windows::Win32::Foundation::HWND;
-use winit::raw_window_handle::{HasWindowHandle, Win32WindowHandle};
+use winit::raw_window_handle::{HasWindowHandle, Win32WindowHandle, WaylandWindowHandle, XlibWindowHandle};
 
 mod app;
 mod tcp_server;
 mod error;
 
 pub static VISIBLE: Mutex<bool> = Mutex::new(true);
+#[cfg(windows)]
 pub static WINDOW_HANDLE: OnceLock<Win32WindowHandle> = OnceLock::new();
+// #[cfg(not(windows))]
+// pub static WAYLAND_HANDLE: OnceLock<WaylandWindowHandle> = OnceLock::new();
+// #[cfg(not(windows))]
+// pub static XLIB_HANDLE: OnceLock<XlibWindowHandle> = OnceLock::new();
+
+
 // lazy_static! {
 //     pub static ref MUMBLE_LINK: Arc<RwLock<Option<mumble_link::MumbleLink>>> =
 //         RwLock::new(None).into();
@@ -50,7 +58,7 @@ fn main() {
     let ping_str = serde_json::to_string(&ping).unwrap();
     eprintln!("Ping: {}", ping_str);
 
-    let (to_gui_tx, to_gui_rx) = std::sync::mpsc::channel::<ToGUI>();
+    let (to_gui_tx, mut to_gui_rx) = std::sync::mpsc::channel::<ToGUI>();
     let (from_gui_tx, from_gui_rx) = std::sync::mpsc::channel::<FromGuiToServer>();
 
     let mut icon_data: Vec<u8> = Vec::with_capacity(16 * 16 * 4);
@@ -59,12 +67,12 @@ fn main() {
         icon_data.extend_from_slice(&[255, 0, 0, 255]);
     }
     let icon = Icon::from_rgba(icon_data, 16, 16).expect("to create icon");
-    let menu_entries = generate_menu_entries();
-    let tray_menu = Menu::with_items(&menu_entries.iter().map(|mi| mi.borrow()).collect::<Vec<_>>()).expect("to create menu");
+    // let menu_entries = generate_menu_entries();
+    // let tray_menu = Menu::with_items(&menu_entries.iter().map(|mi| mi.borrow()).collect::<Vec<_>>()).expect("to create menu");
     let _tray_icon = TrayIconBuilder::new()
         .with_icon(icon)
         .with_tooltip("TM to Mumble Link")
-        .with_menu(Box::new(tray_menu))
+        // .with_menu(Box::new(tray_menu))
         .build().expect("to build tray icon");
 
     let to_gui_tx2 = to_gui_tx.clone();
@@ -72,103 +80,167 @@ fn main() {
         tcp_server::server_main("", 0, to_gui_tx2, from_gui_rx);
     });
 
-    eframe::run_native(
-        "TM to Mumble Link",
-        nat_opts,
-        // tray icon stuff via: https://github.com/emilk/egui/discussions/737#discussioncomment-8830140
-        Box::new(|cc| {
-            let winit::raw_window_handle::RawWindowHandle::Win32(handle) =
-                cc.window_handle().unwrap().as_raw()
-            else {
-                panic!("Expected a Windows window handle");
-            };
+    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
 
-            let context = cc.egui_ctx.clone();
+    while (shutdown_rx.try_recv().is_err()) {
+        let borrowed_to_gui_rx = &mut to_gui_rx;
+        let cloned_to_gui_tx = to_gui_tx.clone();
+        let cloned_shutdown_tx  = shutdown_tx.clone();
+        eframe::run_native(
+            "TM to Mumble Link",
+            nat_opts.clone(),
+            // tray icon stuff via: https://github.com/emilk/egui/discussions/737#discussioncomment-8830140
+            Box::new(|cc| {
+                // if windows
 
-            WINDOW_HANDLE.set(handle.clone()).expect("to set window handle");
+                // #[cfg(windows)]
+                // {
+                //     let winit::raw_window_handle::RawWindowHandle::Win32(handle) =
+                //         cc.window_handle().unwrap().as_raw()
+                //     else {
+                //         panic!("Expected a Windows window handle");
+                //     };
 
-            MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                // println!("MenuEvent: {:?}", event);
-                // to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("MenuEvent: {:?}", event))).expect("to send to gui");
-                let MenuEvent { id } = event;
-                match id.0.as_str() {
-                    MID_SHOW => show_window(HWND(handle.hwnd.into())),
-                    MID_HIDE => hide_window(HWND(handle.hwnd.into())),
-                    MID_EXIT => {
-                        std::process::exit(0);
-                    },
-                    _ => {
-                        eprintln!("Unknown menu id: {}", id.0);
-                    }
-                }
+                //     let context = cc.egui_ctx.clone();
 
-            }));
-
-
-            // tray-icon crate
-            // https://docs.rs/tray-icon/0.12.0/tray_icon/struct.TrayIconEvent.html#method.set_event_handler
-            TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-                // println!("TrayIconEvent: {:?}", event);
-                let _ = to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("TrayIconEvent: {:?}", event))).expect("to send to gui");
-                let (id, pos, rect, btn, btn_state) = match event {
-                    TrayIconEvent::Click {
-                        id,
-                        position,
-                        rect,
-                        button,
-                        button_state,
-                    } => (id, position, rect, button, button_state),
-                    _ => {
-                        return;
-                    }
-                };
-
-                if btn_state == MouseButtonState::Down {
-                    match btn {
-                        MouseButton::Left => set_window_visible(HWND(handle.hwnd.into()), !is_window_visible()),
-                        MouseButton::Right => {
-                            // let _ = tray_icon.hide();
-                            // let _ = tray_icon.show();
+                //     WINDOW_HANDLE.set(handle.clone()).expect("to set window handle");
+                // }
+                // #[cfg(not(windows))]
+                {
+                    let win_handle: winit::raw_window_handle::WindowHandle<'_> = cc.window_handle().unwrap();
+                    let handle = win_handle.as_raw();
+                    let context = cc.egui_ctx.clone();
+                    match handle {
+                        winit::raw_window_handle::RawWindowHandle::Win32(handle) => {
+                            // WINDOW_HANDLE.set(handle.clone()).expect("to set window handle");
                         },
-                        _ => {}
+                        winit::raw_window_handle::RawWindowHandle::Wayland(handle) => {
+                            // WAYLAND_HANDLE.set(handle.clone()).expect("to set wayland handle");
+                        },
+                        winit::raw_window_handle::RawWindowHandle::Xlib(handle) => {
+                            // XLIB_HANDLE.set(handle.clone()).expect("to set xlib handle");
+                        },
+                        _ => {
+                            eprintln!("Expected a Windows, Wayland or Xlib window handle");
+                        }
                     }
                 }
-            }));
-            Ok(Box::new(MumbleBridgeApp::new(to_gui_rx, from_gui_tx)))
-        }),
-    )
-    .expect("to run the app")
+
+                // MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+                //     // println!("MenuEvent: {:?}", event);
+                //     // cloned_to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("MenuEvent: {:?}", event))).expect("to send to gui");
+                //     let MenuEvent { id } = event;
+                //     match id.0.as_str() {
+                //         MID_SHOW => show_window(get_window_handle()),
+                //         MID_HIDE => hide_window(get_window_handle()),
+                //         MID_EXIT => {
+                //             std::process::exit(0);
+                //         },
+                //         _ => {
+                //             eprintln!("Unknown menu id: {}", id.0);
+                //         }
+                //     }
+
+                // }));
+
+
+                // tray-icon crate
+                // https://docs.rs/tray-icon/0.12.0/tray_icon/struct.TrayIconEvent.html#method.set_event_handler
+                TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+                    // println!("TrayIconEvent: {:?}", event);
+                    let _ = cloned_to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("TrayIconEvent: {:?}", event))).expect("to send to gui");
+                    let (id, pos, rect, btn, btn_state) = match event {
+                        TrayIconEvent::Click {
+                            id,
+                            position,
+                            rect,
+                            button,
+                            button_state,
+                        } => (id, position, rect, button, button_state),
+                        _ => {
+                            return;
+                        }
+                    };
+
+                    if btn_state == MouseButtonState::Down {
+                        match btn {
+                            MouseButton::Left => set_window_visible(get_window_handle(), !is_window_visible()),
+                            MouseButton::Right => {
+                                // let _ = tray_icon.hide();
+                                // let _ = tray_icon.show();
+                            },
+                            _ => {}
+                        }
+                    }
+                }));
+                Ok(Box::new(MumbleBridgeApp::new(borrowed_to_gui_rx, from_gui_tx.clone(), cloned_shutdown_tx)))
+            }),
+        )
+        .expect("to run the app");
+        while !*VISIBLE.lock().unwrap() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 }
 
 pub fn is_window_visible() -> bool {
     *VISIBLE.lock().unwrap()
 }
 
-pub fn hide_window(handle: HWND) {
-    set_window_visible(handle, false);
+// #[cfg(windows)]
+// pub fn hide_window(handle: HWND) {
+//     set_window_visible(handle, false);
+// }
+
+// #[cfg(windows)]
+// pub fn show_window(handle: HWND) {
+//     set_window_visible(handle, true);
+// }
+
+// #[cfg(windows)]
+// pub fn set_window_visible(handle: HWND, visible: bool) {
+//     let show = windows::Win32::UI::WindowsAndMessaging::SW_SHOWDEFAULT;
+//     let hide = windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+//     let cmd = if visible { show } else { hide };
+//     unsafe {
+//         let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
+//             handle,
+//             cmd,
+//         );
+//     }
+//     println!("Setting window visible: {}", visible);
+//     *VISIBLE.lock().unwrap() = visible;
+//     println!("Window visible: {}", *VISIBLE.lock().unwrap());
+// }
+
+// #[cfg(windows)]
+// pub fn get_window_handle() -> HWND {
+//     HWND(WINDOW_HANDLE.get().unwrap().hwnd.into())
+// }
+
+// #[cfg(not(windows))]
+pub fn get_window_handle() -> () {
+    ()
 }
 
-pub fn show_window(handle: HWND) {
-    set_window_visible(handle, true);
+// #[cfg(not(windows))]
+pub fn hide_window(_h: ()) {
+    set_window_visible((), false);
 }
 
-pub fn set_window_visible(handle: HWND, visible: bool) {
-    let show = windows::Win32::UI::WindowsAndMessaging::SW_SHOWDEFAULT;
-    let hide = windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
-    let cmd = if visible { show } else { hide };
-    unsafe {
-        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
-            handle,
-            cmd,
-        );
-    }
+// #[cfg(not(windows))]
+pub fn show_window(_h: ()) {
+    set_window_visible((), true);
+}
+
+// #[cfg(not(windows))]
+pub fn set_window_visible(_h: (), visible: bool) {
+    // if let Some(wh) = WAYLAND_HANDLE.get() {
+
+    // }
     println!("Setting window visible: {}", visible);
     *VISIBLE.lock().unwrap() = visible;
     println!("Window visible: {}", *VISIBLE.lock().unwrap());
-}
-
-pub fn get_window_handle() -> HWND {
-    HWND(WINDOW_HANDLE.get().unwrap().hwnd.into())
 }
 
 const MID_SHOW: &str = "1";

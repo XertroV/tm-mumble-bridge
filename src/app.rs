@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use windows::Win32::Foundation::HWND;
 use winit::{raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::Window};
 
-use crate::{get_window_handle, set_window_visible, tcp_server::FromTM, WINDOW_HANDLE};
+use crate::{get_window_handle, set_window_visible, tcp_server::FromTM};
 
 const MUMBLE_SCALE_INV: f32 = 32.0;
 
@@ -19,7 +19,8 @@ pub enum ToGUI {
     MumbleError(String),
     ListeningOn(String, u16),
     ProtocolError(String),
-    FromTM(FromTM)
+    FromTM(FromTM),
+    HideMainWindow()
 }
 
 impl From<FromTM> for ToGUI {
@@ -33,7 +34,7 @@ pub enum FromGuiToServer {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct MumbleBridgeApp {
+pub struct MumbleBridgeApp<'a> {
     connected: bool,
     in_server: bool,
     client_connected: bool,
@@ -44,14 +45,16 @@ pub struct MumbleBridgeApp {
     #[serde(skip)]
     e_state: MumbleBridgeEphemeralState,
     #[serde(skip)]
-    rx_gui: OnceLock<Receiver<ToGUI>>,
+    rx_gui: OnceLock<&'a mut Receiver<ToGUI>>,
     #[serde(skip)]
     tx_gui: OnceLock<Sender<FromGuiToServer>>,
+    #[serde(skip)]
+    shutdown_tx: OnceLock<Sender<()>>,
 }
 
-impl App for MumbleBridgeApp {
+impl App for MumbleBridgeApp<'_> {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        self._update();
+        self._update(ctx, frame);
         self.render_main_top(ctx, frame);
         self.render_main_body(ctx, frame);
         self.render_main_footer(ctx, frame);
@@ -68,7 +71,7 @@ impl App for MumbleBridgeApp {
     }
 }
 
-impl Default for MumbleBridgeApp {
+impl Default for MumbleBridgeApp<'_> {
     fn default() -> Self {
         MumbleBridgeApp {
             connected: false,
@@ -81,25 +84,28 @@ impl Default for MumbleBridgeApp {
             e_state: Default::default(),
             rx_gui: OnceLock::new(),
             tx_gui: OnceLock::new(),
+            shutdown_tx: OnceLock::new(),
         }
     }
 }
 
-impl MumbleBridgeApp {
-    pub fn new(rx_gui: Receiver<ToGUI>, tx_gui: Sender<FromGuiToServer>) -> Self {
+impl MumbleBridgeApp<'_> {
+    pub fn new<'a>(rx_gui: &'a mut Receiver<ToGUI>, tx_gui: Sender<FromGuiToServer>, shutdown_tx: Sender<()>) -> MumbleBridgeApp<'a> {
         let app = MumbleBridgeApp::default();
         app.rx_gui.set(rx_gui).expect("Failed to set rx_gui");
         app.tx_gui.set(tx_gui).expect("Failed to set tx_gui");
-        // match app.try_connect() {
-        //     Ok(_) => {}
-        //     Err(e) => {
-        //         app.e_state.last_error_msg = format!("Error connecting to Mumble: {}", e);
-        //     }
-        // }
+        app.shutdown_tx.set(shutdown_tx).expect("Failed to set shutdown_tx");
         app
     }
 
-    fn _update(&mut self) {
+    fn hide_main_window(&self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // let mut shutdown_tx = self.shutdown_tx.get().expect("shutdown_tx not set");
+        // shutdown_tx.send(()).expect("to send shutdown");
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    fn _update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        let mut hide_window = false;
         if let Some(rx) = self.rx_gui.get_mut() {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
@@ -117,6 +123,9 @@ impl MumbleBridgeApp {
                     },
                     ToGUI::ProtocolError(e) => {
                         self.e_state.last_error_msg = e;
+                    },
+                    ToGUI::HideMainWindow() => {
+                        hide_window = true;
                     },
                     ToGUI::FromTM(from_tm) => {
                         match from_tm {
@@ -150,6 +159,9 @@ impl MumbleBridgeApp {
                     }
                 }
             }
+        }
+        if hide_window {
+            self.hide_main_window(ctx, frame);
         }
     }
 

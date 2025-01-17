@@ -17,6 +17,7 @@ eframe = { version = "0.30", default-features = false, features = [
     "accesskit",
     "default_fonts",
     "x11",
+    "wayland",
     "serde",
     "wgpu",
     # "persistence",

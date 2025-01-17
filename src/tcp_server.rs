@@ -9,6 +9,7 @@ use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
 
 use crate::app::{FromGuiToServer, ToGUI};
+use crate::VISIBLE;
 
 const DEFAULT_PORT: u16 = 46323;
 
@@ -173,30 +174,40 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                         match from_tm {
                             m@FromTM::Positions {p,c} => {
                                 mumble.update(p.into(), c.into());
-                                to_gui.send(ToGUI::FromTM(m)).unwrap();
+                                if *VISIBLE.lock().unwrap() {
+                                    to_gui.send(ToGUI::FromTM(m)).unwrap();
+                                }
                             }
                             ref m@FromTM::PlayerDetails(ref name, ref login) => {
-                                to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
                                 *pn.write().unwrap() = name.clone();
                                 *pl.write().unwrap() = login.clone();
+                                if *VISIBLE.lock().unwrap() {
+                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                }
                                 // update_context(mumble);
                             }
                             ref m@FromTM::ServerDetails(ref name, ref team) => {
-                                to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
                                 *sl.write().unwrap() = name.clone();
                                 *st.write().unwrap() = team.clone();
                                 update_context(mumble);
+                                if *VISIBLE.lock().unwrap() {
+                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                }
                             }
                             m@FromTM::LeftServer() => {
                                 *sl.write().unwrap() = String::new();
                                 *st.write().unwrap() = "All".to_string();
                                 update_context(mumble);
-                                to_gui.send(ToGUI::FromTM(m)).unwrap();
+                                if *VISIBLE.lock().unwrap() {
+                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                }
                             }
                             m@FromTM::Ping() => {
                                 handler.network().send(_endpoint, serde_json::to_string(&ToTM::Ping()).unwrap().as_bytes());
-                                to_gui.send(ToGUI::FromTM(m)).unwrap();
                                 update_context(mumble);
+                                if *VISIBLE.lock().unwrap() {
+                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                }
                             }
                             FromTM::NetConnected(_, _) | FromTM::NetDisconnected(_) | FromTM::NetAccepted(_) => {
                                 eprintln!("Unexpected message: {:?}", from_tm);
