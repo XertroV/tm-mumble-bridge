@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{borrow::Borrow, sync::Mutex};
+#[allow(unused_imports)]
+use std::thread;
 
 use crate::app::MumbleBridgeApp;
 use app::{FromGuiToServer, ToGUI};
@@ -8,6 +10,8 @@ use app::{FromGuiToServer, ToGUI};
 use eframe::Renderer;
 use egui::{vec2, Context};
 use tcp_server::{FromTM, MPos};
+#[allow(unused_imports)]
+use tcp_server::{shutdown_tcp_server, TCP_HANDLER};
 // use egui::mutex::RwLock;
 use lazy_static::lazy_static;
 // use shmem_bind::{self as shmem, ShmemBox, ShmemError};
@@ -42,7 +46,7 @@ fn main() {
     env_logger::init();
     log::set_max_level(log::LevelFilter::Info);
 
-    log::error!("Starting TM to Mumble Link");
+    log::info!("Starting TM to Mumble Link");
 
     let mut nat_opts = eframe::NativeOptions::default();
     nat_opts.centered = true;
@@ -205,7 +209,17 @@ fn main() {
     // let null_menu_handler = move |_: MenuEvent| {};
     // MenuEvent::set_event_handler(Some(null_menu_handler));
 
-    println!("App closed");
+    log::info!("App closed");
+    #[cfg(not(debug_assertions))]
+    {
+        shutdown_tcp_server();
+        log::info!("TCP server stopped. Sleeping 1ms before exit.");
+        thread::sleep(std::time::Duration::from_millis(1));
+    }
+    #[cfg(debug_assertions)]
+    {
+        log::info!("TCP server not stopped in debug mode to try and reproduce crashes. `main` ending now.");
+    }
     // set_window_visible((), false);
     // return;
     // while !is_window_visible() {

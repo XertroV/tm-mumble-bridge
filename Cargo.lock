@@ -3691,7 +3691,7 @@ dependencies = [
 
 [[package]]
 name = "tm-mumble-link"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "byteorder",
  "eframe",

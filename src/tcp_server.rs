@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use lazy_static::lazy_static;
-use message_io::network::{NetEvent, Transport};
+use message_io::network::{Endpoint, NetEvent, Transport};
 use message_io::node::{self};
 use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
@@ -94,12 +94,29 @@ impl FromTM {
 pub enum ToTM {
     ConnectedStatus(bool),
     Ping(),
+    LinkAppInfo {
+        version: String,
+        options: Vec<(String, String)>,
+    },
+    ShutdownNow {},
 }
 
 type LE = LittleEndian;
 
 lazy_static! {
     pub static ref LAST_CONTEXT: Mutex<String> = Mutex::new(String::new());
+    pub static ref TCP_HANDLER: Arc<RwLock<Option<node::NodeHandler<()>>>> = Arc::new(RwLock::new(None));
+    pub static ref LAST_ENDPOINT: Mutex<Option<Endpoint>> = Mutex::new(None);
+}
+
+#[allow(unused)]
+pub fn shutdown_tcp_server() {
+    if let Some(handler) = TCP_HANDLER.write().unwrap().take() {
+        if let Some(endpoint) = LAST_ENDPOINT.lock().unwrap().take() {
+            handler.network().send(endpoint, serde_json::to_string(&ToTM::ShutdownNow {}).unwrap().as_bytes());
+        }
+        handler.stop();
+    }
 }
 
 pub fn server_main(
@@ -116,6 +133,8 @@ pub fn server_main(
     let port = if port == 0 { DEFAULT_PORT } else { port };
 
     let (handler, listener) = node::split::<()>();
+
+    *TCP_HANDLER.write().unwrap() = Some(handler.clone());
 
     handler
         .network()
@@ -181,6 +200,7 @@ pub fn server_main(
     listener.for_each(move |event| {
         match event.network() {
             NetEvent::Message(_endpoint, data) => {
+                LAST_ENDPOINT.lock().unwrap().replace(_endpoint);
                 // position
                 if data.len() > 0 && data[0] == 1 {
                     match read_pos_msg(&data) {
@@ -279,12 +299,12 @@ pub fn server_main(
                     }
                 }
             }
-            NetEvent::Connected(_endpoint, connection_success) => {
-                log::info!("Client connected");
-                to_gui
-                    .send(FromTM::NetConnected(_endpoint.addr(), connection_success).into())
-                    .unwrap();
+            NetEvent::Connected(_endpoint, _connection_success) => {
                 unreachable!();
+                // log::info!("Client connected");
+                // to_gui
+                //     .send(FromTM::NetConnected(_endpoint.addr(), connection_success).into())
+                //     .unwrap();
                 // handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
             NetEvent::Disconnected(_endpoint) => {
@@ -312,6 +332,15 @@ pub fn server_main(
                 to_gui
                     .send(FromTM::NetAccepted(_endpoint.addr()).into())
                     .unwrap();
+                handler.network().send(
+                    _endpoint,
+                    serde_json::to_string(&ToTM::LinkAppInfo {
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        options: vec![],
+                    })
+                    .unwrap()
+                    .as_bytes(),
+                );
                 handler.network().send(
                     _endpoint,
                     serde_json::to_string(&ToTM::ConnectedStatus(
