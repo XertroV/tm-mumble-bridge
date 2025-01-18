@@ -211,7 +211,10 @@ pub fn server_main(
                                 from_tm.get_pos_p().unwrap().clone().into(),
                                 from_tm.get_pos_c().unwrap().clone().into(),
                             );
-                            to_gui.send(ToGUI::FromTM(from_tm)).unwrap();
+                            if to_gui.send(ToGUI::FromTM(from_tm)).is_err() {
+                                log::warn!("GUI channel disconnected");
+                                shutdown_tcp_server();
+                            }
                         }
                         Err(e) => {
                             log::warn!("Error parsing position message: {}", e);
@@ -245,7 +248,7 @@ pub fn server_main(
                                 *pn.write().unwrap() = name.clone();
                                 *pl.write().unwrap() = login.clone();
                                 if *VISIBLE.lock().unwrap() {
-                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                    let _ = to_gui.send(ToGUI::FromTM(m.clone()));
                                 }
                                 // update_context(mumble);
                             }
@@ -254,7 +257,7 @@ pub fn server_main(
                                 *st.write().unwrap() = team.clone();
                                 update_context(mumble);
                                 if *VISIBLE.lock().unwrap() {
-                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                    let _ = to_gui.send(ToGUI::FromTM(m.clone()));
                                 }
                             }
                             m @ FromTM::LeftServer() => {
@@ -262,7 +265,7 @@ pub fn server_main(
                                 *st.write().unwrap() = "All".to_string();
                                 update_context(mumble);
                                 if *VISIBLE.lock().unwrap() {
-                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                    let _ = to_gui.send(ToGUI::FromTM(m.clone()));
                                 }
                             }
                             m @ FromTM::Ping() => {
@@ -272,7 +275,7 @@ pub fn server_main(
                                 );
                                 update_context(mumble);
                                 if *VISIBLE.lock().unwrap() {
-                                    to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
+                                    let _ = to_gui.send(ToGUI::FromTM(m.clone()));
                                 }
                             }
                             FromTM::NetConnected(_, _)
@@ -323,7 +326,7 @@ pub fn server_main(
                     Ok(_) => {}
                     Err(_) => {
                         log::warn!("GUI channel disconnected");
-                        handler.stop();
+                        shutdown_tcp_server();
                     }
                 }
             }
