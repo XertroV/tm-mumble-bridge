@@ -307,10 +307,6 @@ lazy_static! {
             let tmp = rgba[i];
             rgba[i] = (rgba[i+2] as u16 * 2).min(255) as u8;
             rgba[i+2] = tmp;
-            // let tmp_red = [rgba[i], rgba[i+1], rgba[i+2], rgba[i+3]];
-            // let tmp_blue = [rgba[i+8], rgba[i+9], rgba[i+10], rgba[i+11]];
-            // rgba[i..i+4].copy_from_slice(&tmp_blue);
-            // rgba[i+8..i+12].copy_from_slice(&tmp_red);
         }
         (rgba, width, height)
     };

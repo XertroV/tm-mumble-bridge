@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::mpsc::{Receiver, SendError, Sender, TryRecvError};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use message_io::node::{self};
+use lazy_static::lazy_static;
 use message_io::network::{NetEvent, Transport};
+use message_io::node::{self};
 use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
 
@@ -97,17 +98,37 @@ pub enum ToTM {
 
 type LE = LittleEndian;
 
-pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Receiver<FromGuiToServer>) {
-    let ip_addr = if ip_addr.is_empty() {"127.0.0.1"} else {ip_addr};
+lazy_static! {
+    pub static ref LAST_CONTEXT: Mutex<String> = Mutex::new(String::new());
+}
+
+pub fn server_main(
+    ip_addr: &str,
+    port: u16,
+    to_gui: Sender<ToGUI>,
+    from_gui: Receiver<FromGuiToServer>,
+) {
+    let ip_addr = if ip_addr.is_empty() {
+        "127.0.0.1"
+    } else {
+        ip_addr
+    };
     let port = if port == 0 { DEFAULT_PORT } else { port };
 
     let (handler, listener) = node::split::<()>();
 
-    handler.network().listen(Transport::FramedTcp, &format!("{}:{}", ip_addr, port)).unwrap();
+    handler
+        .network()
+        .listen(Transport::FramedTcp, &format!("{}:{}", ip_addr, port))
+        .unwrap();
     log::info!("Listening on {}:{}", ip_addr, port);
-    to_gui.send(ToGUI::ListeningOn(ip_addr.to_string(), port)).unwrap();
+    to_gui
+        .send(ToGUI::ListeningOn(ip_addr.to_string(), port))
+        .unwrap();
 
-    let mumble: Arc<RwLock<std::io::Result<MumbleLink>>> = Arc::new(RwLock::new(Err(std::io::Error::new(std::io::ErrorKind::Other, "Mumble not connected"))));
+    let mumble: Arc<RwLock<std::io::Result<MumbleLink>>> = Arc::new(RwLock::new(Err(
+        std::io::Error::new(std::io::ErrorKind::Other, "Mumble not connected"),
+    )));
     try_connect_mumble(&mumble, &to_gui);
 
     while mumble.read().unwrap().as_ref().is_err() {
@@ -132,10 +153,24 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
     let update_nonce = Arc::new(RwLock::new(0));
 
     let update_context = |mumble: &mut MumbleLink| {
+        let ctx = format!(
+            "TM|{}|{}",
+            &server_login.read().unwrap(),
+            &server_team.read().unwrap()
+        );
         let un = *update_nonce.read().unwrap();
-        mumble.set_identity(format!("{}|{}|{}", &player_name.read().unwrap(), &player_login.read().unwrap(), &un).as_str());
-        mumble.set_context(format!("TM|{}|{}|{}", &server_login.read().unwrap(), &server_team.read().unwrap(), &un).as_bytes());
+        mumble.set_identity(
+            format!(
+                "{}|{}|{}",
+                &player_name.read().unwrap(),
+                &player_login.read().unwrap(),
+                &un
+            )
+            .as_str(),
+        );
+        mumble.set_context(ctx.as_bytes());
         *update_nonce.write().unwrap() += 1;
+        *LAST_CONTEXT.lock().unwrap() = ctx;
     };
 
     let pl: Arc<RwLock<String>> = player_login.clone();
@@ -152,12 +187,20 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                         Ok(from_tm) => {
                             let mut mumble_w = mumble.write().unwrap();
                             let mumble = mumble_w.as_mut().unwrap();
-                            mumble.update(from_tm.get_pos_p().unwrap().clone().into(), from_tm.get_pos_c().unwrap().clone().into());
+                            mumble.update(
+                                from_tm.get_pos_p().unwrap().clone().into(),
+                                from_tm.get_pos_c().unwrap().clone().into(),
+                            );
                             to_gui.send(ToGUI::FromTM(from_tm)).unwrap();
                         }
                         Err(e) => {
                             log::warn!("Error parsing position message: {}", e);
-                            to_gui.send(ToGUI::ProtocolError(format!("Error parsing position message: {}", e))).unwrap();
+                            to_gui
+                                .send(ToGUI::ProtocolError(format!(
+                                    "Error parsing position message: {}",
+                                    e
+                                )))
+                                .unwrap();
                         }
                     }
                     return;
@@ -172,13 +215,13 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                         let mut mumble_w = mumble.write().unwrap();
                         let mumble = mumble_w.as_mut().unwrap();
                         match from_tm {
-                            m@FromTM::Positions {p,c} => {
+                            m @ FromTM::Positions { p, c } => {
                                 mumble.update(p.into(), c.into());
                                 if *VISIBLE.lock().unwrap() {
                                     to_gui.send(ToGUI::FromTM(m)).unwrap();
                                 }
                             }
-                            ref m@FromTM::PlayerDetails(ref name, ref login) => {
+                            ref m @ FromTM::PlayerDetails(ref name, ref login) => {
                                 *pn.write().unwrap() = name.clone();
                                 *pl.write().unwrap() = login.clone();
                                 if *VISIBLE.lock().unwrap() {
@@ -186,7 +229,7 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                                 }
                                 // update_context(mumble);
                             }
-                            ref m@FromTM::ServerDetails(ref name, ref team) => {
+                            ref m @ FromTM::ServerDetails(ref name, ref team) => {
                                 *sl.write().unwrap() = name.clone();
                                 *st.write().unwrap() = team.clone();
                                 update_context(mumble);
@@ -194,7 +237,7 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                                     to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
                                 }
                             }
-                            m@FromTM::LeftServer() => {
+                            m @ FromTM::LeftServer() => {
                                 *sl.write().unwrap() = String::new();
                                 *st.write().unwrap() = "All".to_string();
                                 update_context(mumble);
@@ -202,28 +245,45 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                                     to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
                                 }
                             }
-                            m@FromTM::Ping() => {
-                                handler.network().send(_endpoint, serde_json::to_string(&ToTM::Ping()).unwrap().as_bytes());
+                            m @ FromTM::Ping() => {
+                                handler.network().send(
+                                    _endpoint,
+                                    serde_json::to_string(&ToTM::Ping()).unwrap().as_bytes(),
+                                );
                                 update_context(mumble);
                                 if *VISIBLE.lock().unwrap() {
                                     to_gui.send(ToGUI::FromTM(m.clone())).unwrap();
                                 }
                             }
-                            FromTM::NetConnected(_, _) | FromTM::NetDisconnected(_) | FromTM::NetAccepted(_) => {
+                            FromTM::NetConnected(_, _)
+                            | FromTM::NetDisconnected(_)
+                            | FromTM::NetAccepted(_) => {
                                 log::warn!("Unexpected message: {:?}", from_tm);
-                                to_gui.send(ToGUI::ProtocolError(format!("Unexpected message: {:?}", from_tm))).unwrap();
+                                to_gui
+                                    .send(ToGUI::ProtocolError(format!(
+                                        "Unexpected message: {:?}",
+                                        from_tm
+                                    )))
+                                    .unwrap();
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         log::warn!("Error parsing message: {}", e);
-                        to_gui.send(ToGUI::ProtocolError(format!("Error parsing message: {}", e))).unwrap();
+                        to_gui
+                            .send(ToGUI::ProtocolError(format!(
+                                "Error parsing message: {}",
+                                e
+                            )))
+                            .unwrap();
                     }
                 }
             }
             NetEvent::Connected(_endpoint, connection_success) => {
                 log::info!("Client connected");
-                to_gui.send(FromTM::NetConnected(_endpoint.addr(), connection_success).into()).unwrap();
+                to_gui
+                    .send(FromTM::NetConnected(_endpoint.addr(), connection_success).into())
+                    .unwrap();
                 unreachable!();
                 // handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
             }
@@ -240,17 +300,26 @@ pub fn server_main(ip_addr: &str, port: u16, to_gui: Sender<ToGUI>, from_gui: Re
                     Ok(())
                 })();
                 match r {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(_) => {
                         log::warn!("GUI channel disconnected");
                         handler.stop();
-                    },
+                    }
                 }
             }
             NetEvent::Accepted(_endpoint, _listener) => {
                 log::info!("Client accepted");
-                to_gui.send(FromTM::NetAccepted(_endpoint.addr()).into()).unwrap();
-                handler.network().send(_endpoint, serde_json::to_string(&ToTM::ConnectedStatus(mumble.read().unwrap().as_ref().is_ok())).unwrap().as_bytes());
+                to_gui
+                    .send(FromTM::NetAccepted(_endpoint.addr()).into())
+                    .unwrap();
+                handler.network().send(
+                    _endpoint,
+                    serde_json::to_string(&ToTM::ConnectedStatus(
+                        mumble.read().unwrap().as_ref().is_ok(),
+                    ))
+                    .unwrap()
+                    .as_bytes(),
+                );
             }
         }
     });
@@ -261,12 +330,16 @@ fn try_connect_mumble(mumble: &Arc<RwLock<std::io::Result<MumbleLink>>>, to_gui:
     match mumble_w.as_ref() {
         Ok(_) => {
             log::warn!("Mumble already connected");
-            to_gui.send(ToGUI::MumbleError("Mumble already connected".to_string())).unwrap();
+            to_gui
+                .send(ToGUI::MumbleError("Mumble already connected".to_string()))
+                .unwrap();
         }
-        Err(_) => {
-        }
+        Err(_) => {}
     }
-    *mumble_w = MumbleLink::new("TM-Proximity-Chat", "Bridge to TM2020 plugin for proximity chat");
+    *mumble_w = MumbleLink::new(
+        "TM-Proximity-Chat",
+        "Bridge to TM2020 plugin for proximity chat",
+    );
     drop(mumble_w);
 
     let mumble_r = mumble.read().unwrap();
@@ -279,10 +352,10 @@ fn try_connect_mumble(mumble: &Arc<RwLock<std::io::Result<MumbleLink>>>, to_gui:
 
 fn read_vec3(r: &mut std::io::Cursor<&[u8]>) -> Result<[f32; 3], std::io::Error> {
     Ok([
-            r.read_f32::<LE>()?,
-            r.read_f32::<LE>()?,
-            r.read_f32::<LE>()?,
-        ])
+        r.read_f32::<LE>()?,
+        r.read_f32::<LE>()?,
+        r.read_f32::<LE>()?,
+    ])
 }
 
 fn read_pos_msg(data: &[u8]) -> Result<FromTM, std::io::Error> {

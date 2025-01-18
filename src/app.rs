@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::tcp_server::FromTM;
+use crate::tcp_server::{FromTM, LAST_CONTEXT};
 use eframe::App;
 use egui_extras::{Column, TableBuilder};
 use serde::{Deserialize, Serialize};
@@ -196,8 +196,10 @@ impl MumbleBridgeApp<'_> {
             // }
             if self.connected {
                 self.ui_listening_on(ui);
-                self.ui_mumble_status(ui);
-                self.ui_tm_game_status(ui);
+                ui.horizontal(|ui| {
+                    self.ui_mumble_status(ui);
+                    self.ui_tm_game_status(ui);
+                });
                 self.ui_last_positions(ui);
                 self.ui_curr_details(ui);
             } else {
@@ -248,8 +250,10 @@ impl MumbleBridgeApp<'_> {
             "Player: {} | {}",
             self.player_name, self.player_login
         ));
-        ui.label(format!("Server: {}", self.server_login));
-        ui.label(format!("Team: {}", self.server_team));
+        ui.horizontal(|ui| {
+            ui.label(format!("Server: {}  |  Team: {}", self.server_login, self.server_team));
+        });
+        ui.label(format!("Mumble Ctx: {}", &LAST_CONTEXT.lock().unwrap()));
     }
 
     fn ui_last_positions(&self, ui: &mut egui::Ui) {

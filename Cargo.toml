@@ -29,17 +29,23 @@ env_logger = "0.11.6"
 image = "0.24"
 lazy_static = "1.5"
 log = "0.4.25"
-# libc = "0.2.169"
 message-io = { version = "0.18", default-features = false, features = ["tcp"] }
 mumble-link = "0.2"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
 sysinfo = "0.30.12"
-tokio = { version = "1.38.0", features = ["full"] }
-tokio-macros = "2.3.0"
+#tokio = { version = "1.38.0", features = ["full"] }
+#tokio-macros = "2.3.0"
 tray-icon = "0.19" # 14.3
-windows = { version = "0.57.0", features = ["Win32", "Win32_UI", "Win32_UI_WindowsAndMessaging"] }
+#windows = { version = "0.57.0", features = ["Win32", "Win32_UI", "Win32_UI_WindowsAndMessaging"] }
 winit = "0.30.1"
 
 [build-dependencies]
 winresource = "0.1.19"
+
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "z"  # Optimize for size.
+lto = true
+codegen-units = 1
+panic = "abort"
