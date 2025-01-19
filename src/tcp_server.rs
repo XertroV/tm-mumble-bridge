@@ -10,6 +10,7 @@ use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
 
 use crate::app::{FromGuiToServer, ToGUI};
+use crate::maniaplanet_telemetry::run_mp_telemetry_loop;
 use crate::VISIBLE;
 
 const DEFAULT_PORT: u16 = 46323;
@@ -132,6 +133,51 @@ pub fn server_main(
     };
     let port = if port == 0 { DEFAULT_PORT } else { port };
 
+    let mumble: Arc<RwLock<std::io::Result<MumbleLink>>> = Arc::new(RwLock::new(Err(
+        std::io::Error::new(std::io::ErrorKind::Other, "Mumble not connected"),
+    )));
+    try_connect_mumble(&mumble, &to_gui);
+
+    while mumble.read().unwrap().as_ref().is_err() {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        match from_gui.try_recv() {
+            Ok(FromGuiToServer::TryConnectMumble()) => {
+                try_connect_mumble(&mumble, &to_gui);
+            }
+            Ok(_) => {}
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                log::warn!("GUI channel disconnected");
+                return;
+            }
+        }
+    }
+    log::info!("Mumble connected");
+
+    loop {
+        match from_gui.try_recv() {
+            Ok(FromGuiToServer::UseManiaPlanetTelemetry()) => {
+                let _ = run_mp_telemetry_loop(&mumble, &to_gui);
+                return;
+            }
+            Ok(FromGuiToServer::UseSocketServer()) => {
+                break;
+            }
+            Ok(FromGuiToServer::Shutdown()) => {
+                shutdown_tcp_server();
+                return;
+            }
+            Ok(_) => {}
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                log::warn!("GUI channel disconnected");
+                return;
+            }
+        }
+    }
+
+
+
     let (handler, listener) = node::split::<()>();
 
     *TCP_HANDLER.write().unwrap() = Some(handler.clone());
@@ -145,25 +191,7 @@ pub fn server_main(
         .send(ToGUI::ListeningOn(ip_addr.to_string(), port))
         .unwrap();
 
-    let mumble: Arc<RwLock<std::io::Result<MumbleLink>>> = Arc::new(RwLock::new(Err(
-        std::io::Error::new(std::io::ErrorKind::Other, "Mumble not connected"),
-    )));
-    try_connect_mumble(&mumble, &to_gui);
 
-    while mumble.read().unwrap().as_ref().is_err() {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        match from_gui.try_recv() {
-            Ok(FromGuiToServer::TryConnectMumble()) => {
-                try_connect_mumble(&mumble, &to_gui);
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                log::warn!("GUI channel disconnected");
-                break;
-            }
-        }
-    }
-    log::info!("Mumble connected");
 
     let player_login = Arc::new(RwLock::new(String::new()));
     let player_name = Arc::new(RwLock::new(String::new()));

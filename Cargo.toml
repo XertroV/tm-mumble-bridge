@@ -13,6 +13,7 @@ glow = ["eframe/glow"]
 
 [dependencies]
 byteorder = "1.5.0"
+cgmath = { version = "0.18.0", features = ["swizzle"] }
 eframe = { version = "0.30", default-features = false, features = [
     "accesskit",
     "default_fonts",
@@ -26,9 +27,11 @@ eframe = { version = "0.30", default-features = false, features = [
 egui = { version = "0.30", features = ["serde", "accesskit"] }
 egui_extras = "0.30.0"
 env_logger = "0.11.6"
+#hex = "0.4.3"
 image = "0.24"
 lazy_static = "1.5"
 log = "0.4.25"
+md-5 = "0.10.6"
 message-io = { version = "0.18", default-features = false, features = ["tcp"] }
 mumble-link = "0.2"
 serde = { version = "1.0.217", features = ["derive"] }
@@ -37,6 +40,8 @@ sysinfo = "0.30.12"
 #tokio = { version = "1.38.0", features = ["full"] }
 #tokio-macros = "2.3.0"
 tray-icon = "0.19" # 14.3
+windows = { version = "0.59.0", features = ["Win32", "Win32_System_Memory", "Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-core = "0.59.0"
 #windows = { version = "0.57.0", features = ["Win32", "Win32_UI", "Win32_UI_WindowsAndMessaging"] }
 winit = "0.30.1"
 

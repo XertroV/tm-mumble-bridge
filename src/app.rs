@@ -6,12 +6,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::tcp_server::{FromTM, LAST_CONTEXT};
+use crate::{
+    mp_telemetry_data::STelemetry,
+    tcp_server::{FromTM, LAST_CONTEXT}, ALT_HELD_AT_STARTUP,
+};
 use eframe::App;
+use egui::vec2;
 use egui_extras::{Column, TableBuilder};
 use serde::{Deserialize, Serialize};
 
-const MUMBLE_SCALE_INV: f32 = 32.0;
+pub const MUMBLE_SCALE_INV: f32 = 32.0;
+pub const MUMBLE_SCALE: f32 = 1.0 / 32.0;
 
 #[derive(Debug, Clone)]
 pub enum ToGUI {
@@ -21,6 +26,7 @@ pub enum ToGUI {
     ListeningOn(String, u16),
     ProtocolError(String),
     FromTM(FromTM),
+    Telemetry(STelemetry),
     // HideMainWindow()
 }
 
@@ -32,6 +38,10 @@ impl From<FromTM> for ToGUI {
 
 pub enum FromGuiToServer {
     TryConnectMumble(),
+    UseManiaPlanetTelemetry(),
+    UseSocketServer(),
+    #[allow(unused)]
+    Shutdown(),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -39,10 +49,14 @@ pub struct MumbleBridgeApp<'a> {
     connected: bool,
     in_server: bool,
     client_connected: bool,
+    has_chosen_method: bool,
+    offer_manual_choice: bool,
     player_name: String,
     player_login: String,
     server_login: String,
     server_team: String,
+    #[serde(skip)]
+    telemetry: Option<STelemetry>,
     #[serde(skip)]
     e_state: MumbleBridgeEphemeralState,
     #[serde(skip)]
@@ -78,10 +92,13 @@ impl Default for MumbleBridgeApp<'_> {
             connected: false,
             in_server: false,
             client_connected: false,
+            has_chosen_method: false,
+            offer_manual_choice: *ALT_HELD_AT_STARTUP.lock().unwrap(),
             player_name: String::new(),
             player_login: String::new(),
             server_login: String::new(),
             server_team: String::new(),
+            telemetry: None,
             e_state: Default::default(),
             rx_gui: OnceLock::new(),
             tx_gui: OnceLock::new(),
@@ -113,6 +130,10 @@ impl MumbleBridgeApp<'_> {
                     // ToGUI::TaskBarIconMsg(msg) => {
                     //     self.e_state.last_task_bar_msg = msg;
                     // },
+                    ToGUI::Telemetry(telemetry) => {
+                        self.telemetry.replace(telemetry);
+                        // log::info!("Got telemetry: {:?}", telemetry.object);
+                    }
                     ToGUI::IsConnected(is_connected) => {
                         self.connected = is_connected;
                     }
@@ -190,30 +211,68 @@ impl MumbleBridgeApp<'_> {
 
     fn render_main_body(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            // if ui.button("Minimize to tray icon").clicked() {
-            //     set_window_visible(ctx, false);
-            //     // self.hide_main_window(ctx, frame);
-            // }
-            if self.connected {
-                self.ui_listening_on(ui);
-                ui.horizontal(|ui| {
-                    self.ui_mumble_status(ui);
-                    self.ui_tm_game_status(ui);
-                });
-                self.ui_last_positions(ui);
-                self.ui_curr_details(ui);
-            } else {
-                if ui.button("Connect to Mumble").clicked() {
+            egui::ScrollArea::new([false, true]).auto_shrink([false, true]).show(ui, |ui| {
+                // if ui.button("Minimize to tray icon").clicked() {
+                //     set_window_visible(ctx, false);
+                //     // self.hide_main_window(ctx, frame);
+                // }
+                if self.connected && self.has_chosen_method {
+                    self.ui_listening_on(ui);
+                    ui.horizontal(|ui| {
+                        self.ui_mumble_status(ui);
+                        self.ui_tm_game_status(ui);
+                    });
+                    self.ui_last_positions(ui);
+                    self.ui_curr_details(ui);
+                } else if !self.connected {
+                    if ui.button("Connect to Mumble").clicked() {
+                        self.tx_gui
+                            .get()
+                            .expect("tx_gui not set")
+                            .send(FromGuiToServer::TryConnectMumble())
+                            .expect("to send to server");
+                        self.e_state.last_error_msg = String::new();
+                    }
+                } else if !self.has_chosen_method && !self.offer_manual_choice {
                     self.tx_gui
                         .get()
                         .expect("tx_gui not set")
-                        .send(FromGuiToServer::TryConnectMumble())
+                        .send(FromGuiToServer::UseSocketServer())
                         .expect("to send to server");
-                    self.e_state.last_error_msg = String::new();
+                    self.has_chosen_method = true;
+                } else if !self.has_chosen_method && self.offer_manual_choice {
+                    if ui.button("Use the Plugin (Recommended)").clicked() {
+                        self.tx_gui
+                            .get()
+                            .expect("tx_gui not set")
+                            .send(FromGuiToServer::UseSocketServer())
+                            .expect("to send to server");
+                        self.e_state.last_error_msg = String::new();
+                        self.has_chosen_method = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(vec2(400.0, 240.0)));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(vec2(400.0, 240.0)));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(400.0, 240.0)));
+                    }
+                    if ui.button("Use TM Telemetry").clicked() {
+                        self.tx_gui
+                            .get()
+                            .expect("tx_gui not set")
+                            .send(FromGuiToServer::UseManiaPlanetTelemetry())
+                            .expect("to send to server");
+                        self.e_state.last_error_msg = String::new();
+                        self.has_chosen_method = true;
+                    }
+                } else {
+                    ui.label("UNKNOWN STATE");
                 }
-            }
-            self.ui_dbg_task_bar_msg(ui);
-            self.ui_opt_last_error_msg(ui);
+
+                if let Some(t) = self.telemetry.as_ref() {
+                    self.render_telemetry(ui, t);
+                }
+
+                self.ui_dbg_task_bar_msg(ui);
+                self.ui_opt_last_error_msg(ui);
+            });
         });
     }
 
@@ -251,7 +310,10 @@ impl MumbleBridgeApp<'_> {
             self.player_name, self.player_login
         ));
         ui.horizontal(|ui| {
-            ui.label(format!("Server: {}  |  Team: {}", self.server_login, self.server_team));
+            ui.label(format!(
+                "Server: {}  |  Team: {}",
+                self.server_login, self.server_team
+            ));
         });
         ui.label(format!("Mumble Ctx: {}", &LAST_CONTEXT.lock().unwrap()));
     }
@@ -303,7 +365,11 @@ impl MumbleBridgeApp<'_> {
     }
 
     fn ui_tm_game_status_small(&self, ui: &mut egui::Ui) {
-        ui.label(if self.client_connected { "TM: ✅" } else { "TM: ❌" });
+        ui.label(if self.client_connected {
+            "TM: ✅"
+        } else {
+            "TM: ❌"
+        });
     }
 
     fn ui_tm_game_status(&self, ui: &mut egui::Ui) {
@@ -350,9 +416,24 @@ impl MumbleBridgeApp<'_> {
         }
     }
 
-    fn ui_dbg_task_bar_msg(&self, ui: &mut egui::Ui) {
+    fn ui_dbg_task_bar_msg(&self, _ui: &mut egui::Ui) {
         #[cfg(debug_assertions)]
-        ui.label(&self.e_state.last_task_bar_msg);
+        _ui.label(&self.e_state.last_task_bar_msg);
+    }
+
+    fn render_telemetry(&self, ui: &mut egui::Ui, telemetry: &STelemetry) {
+        // egui::CentralPanel::default().show(ui, |ui| {
+        ui.label("Telemetry");
+        // header
+        ui.label(format!("Header: {:#?}", telemetry.header));
+        ui.label(format!("UpdateNb: {:#?}", telemetry.update_number));
+        ui.label(format!("Game: {:#?}", &telemetry.game));
+        ui.label(format!("Race: {:#?}", &telemetry.race));
+        ui.label(format!("Object: {:#?}", &telemetry.object));
+        ui.label(format!("Vehicle: {:#?}", &telemetry.vehicle));
+        ui.label(format!("Device: {:#?}", &telemetry.device));
+        ui.label(format!("Player: {:#?}", &telemetry.player));
+        // });
     }
 }
 
@@ -361,6 +442,7 @@ struct MumbleBridgeEphemeralState {
     last_ping: Instant,
     last_error_msg: String,
     last_error_msg_time: Instant,
+    #[allow(unused)]
     last_task_bar_msg: String,
     last_player_pos: [f32; 3],
     last_camera_pos: [f32; 3],

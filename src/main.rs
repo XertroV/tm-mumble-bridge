@@ -20,14 +20,19 @@ use tray_icon::{
     menu::{IsMenuItem, Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
 };
+use util::is_alt_held;
 // #[cfg(windows)]
 // use windows::Win32::Foundation::HWND;
 // use winit::raw_window_handle::{HasWindowHandle, Win32WindowHandle, WaylandWindowHandle, XlibWindowHandle};
 
 mod app;
 mod tcp_server;
+mod maniaplanet_telemetry;
+pub mod mp_telemetry_data;
+mod util;
 
 pub static VISIBLE: Mutex<bool> = Mutex::new(true);
+pub static ALT_HELD_AT_STARTUP: Mutex<bool> = Mutex::new(false);
 // #[cfg(windows)]
 // pub static WINDOW_HANDLE: RwLock<Option<Win32WindowHandle>> = RwLock::new();
 // #[cfg(not(windows))]
@@ -46,6 +51,8 @@ fn main() {
     env_logger::init();
     log::set_max_level(log::LevelFilter::Info);
 
+    *ALT_HELD_AT_STARTUP.lock().unwrap() = is_alt_held();
+
     log::info!("Starting TM to Mumble Link");
 
     let mut nat_opts = eframe::NativeOptions::default();
@@ -59,6 +66,12 @@ fn main() {
         .with_minimize_button(true)
         .with_maximize_button(false);
     nat_opts.renderer = Renderer::Wgpu;
+
+    if *ALT_HELD_AT_STARTUP.lock().unwrap() {
+        nat_opts.viewport = nat_opts.viewport
+            .with_inner_size(vec2(400.0, 840.0))
+            .with_min_inner_size(vec2(400.0, 840.0));
+    }
 
     // let (from_tm_tx, from_tm_rx) = std::sync::mpsc::channel::<FromTM>();
     // let (to_tm_tx, to_tm_rx) = std::sync::mpsc::channel::<ToTM>();
