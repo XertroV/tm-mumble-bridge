@@ -44,16 +44,18 @@ class ReleaseTests(unittest.TestCase):
             release.metadata(self.root)
 
     def test_packages_include_executable_docs_and_valid_checksums(self):
-        linux = release.package(self.root, self.binary, 'linux-x86_64')
+        tui = self.root / 'tui'
+        tui.write_bytes(b'tui fixture')
+        linux = release.package(self.root, self.binary, 'linux-x86_64', tui)
         with tarfile.open(linux) as bundle:
-            self.assertEqual(set(bundle.getnames()), {'tm-mumble-link', *release.DOCS})
+            self.assertEqual(set(bundle.getnames()), {'tm-mumble-link', 'tm-mumble-link-tui', *release.DOCS})
             self.assertEqual(bundle.getmember('tm-mumble-link').mode, 0o755)
             self.assertEqual(bundle.extractfile('tm-mumble-link').read(), b'binary fixture')
         with self.assertRaises(ValueError):
             release.verify_assets(self.root / 'dist', '1.2.3')
-        windows = release.package(self.root, self.binary, 'windows-x86_64')
+        windows = release.package(self.root, self.binary, 'windows-x86_64', tui)
         with zipfile.ZipFile(windows) as bundle:
-            self.assertEqual(set(bundle.namelist()), {'tm-mumble-link.exe', *release.DOCS})
+            self.assertEqual(set(bundle.namelist()), {'tm-mumble-link.exe', 'tm-mumble-link-tui.exe', *release.DOCS})
         self.assertEqual(len(release.verify_assets(self.root / 'dist', '1.2.3')), 4)
         tui = self.root / 'tui'
         tui.write_bytes(b'tui fixture')
@@ -115,4 +117,3 @@ class ReleaseTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
