@@ -1,5 +1,7 @@
 """Release gates and archive contract, with no network or Rust dependency."""
 import importlib.util
+import json
+import os
 from pathlib import Path
 import tarfile
 import tempfile
@@ -77,6 +79,32 @@ class ReleaseTests(unittest.TestCase):
             changed, same_manifest.replace('1.2.3', '1.2.2'), same_lock.replace('1.2.3', '1.2.2')
         ]):
             self.assertEqual(release.preparation(self.root, before, after), '1.2.3')
+
+    def test_lookup_finds_drafts_and_paginates(self):
+        draft = {'tag_name': 'v1.2.3', 'draft': True}
+        first_page = [{'tag_name': f'v0.0.{i}', 'draft': False} for i in range(100)]
+        with patch.dict(os.environ, {'GH_REPO': 'owner/repo'}), patch.object(
+            release, 'gh', side_effect=[json.dumps(first_page), json.dumps([draft])]
+        ) as api:
+            self.assertEqual(release.find_release('v1.2.3'), draft)
+            self.assertEqual(api.call_args.args, ('api', 'repos/owner/repo/releases?per_page=100&page=2'))
+        with patch.dict(os.environ, {'GH_REPO': 'owner/repo'}), patch.object(release, 'gh', return_value='[]'):
+            self.assertIsNone(release.find_release('v1.2.3'))
+
+    def test_verification_failure_never_publishes_draft(self):
+        (self.root / 'releases').mkdir()
+        (self.root / 'releases/v1.2.3.md').write_text('# v1.2.3\n\nChanges.\n')
+        for platform in release.PLATFORMS:
+            release.package(self.root, self.binary, platform)
+        draft = {'draft': True}
+        with patch.dict(os.environ, {'RELEASE_TAG': 'v1.2.3'}), patch.object(
+            release.subprocess, 'check_output', return_value='abc\n'
+        ), patch.object(release, 'find_release', side_effect=[None, draft]), patch.object(
+            release, 'gh'
+        ) as gh, patch.object(release, 'verify_download', side_effect=ValueError('Bad download')):
+            with self.assertRaises(ValueError):
+                release.publish(self.root)
+            self.assertFalse(any('--draft=false' in call.args for call in gh.call_args_list))
 
 
 if __name__ == '__main__':

@@ -118,15 +118,19 @@ def gh(*args):
 
 
 def find_release(tag):
-    result = subprocess.run(
-        ['gh', 'api', f'repos/{os.environ["GH_REPO"]}/releases/tags/{tag}'],
-        text=True, encoding='utf-8', capture_output=True,
-    )
-    if result.returncode == 0:
-        return json.loads(result.stdout)
-    if 'HTTP 404' in result.stderr:
-        return None
-    raise RuntimeError(result.stderr)
+    # GET /releases/tags/{tag} only finds published releases. The authenticated
+    # list endpoint also returns drafts, including drafts from failed attempts.
+    page = 1
+    while True:
+        releases = json.loads(gh(
+            'api', f'repos/{os.environ["GH_REPO"]}/releases?per_page=100&page={page}'
+        ))
+        for release in releases:
+            if release['tag_name'] == tag:
+                return release
+        if len(releases) < 100:
+            return None
+        page += 1
 
 
 def verify_download(tag, version, assets, release, compare_build=True):
