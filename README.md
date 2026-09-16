@@ -24,7 +24,18 @@ The existing `mumble-link` crate handles this format. Running the Windows bridge
 inside Wine will not connect it to native Linux Mumble.
 
 The Linux bridge uses a normal window without a tray icon; minimize it using
-your window manager and close it to exit. Direct `ManiaPlanet_Telemetry` access
+your window manager and close it to exit. If Wayland's runtime client library
+is unavailable but XWayland is present, startup automatically falls back to X11.
+Use `TM_MUMBLE_BACKEND=wayland` or `TM_MUMBLE_BACKEND=x11` to select a backend
+explicitly. A display-free client is available as `tm-mumble-link-tui`; it never
+initializes a graphical backend and is suitable for headless machines, SSH, or
+Wayland sessions without XWayland:
+
+```sh
+./tm-mumble-link-tui
+```
+
+Direct `ManiaPlanet_Telemetry` access
 and the Alt-at-startup telemetry selector are Windows-only. Linux uses the TCP
 plugin mode automatically.
 
@@ -43,6 +54,7 @@ Debian/Ubuntu:
 sudo apt-get install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev
 cargo build --release --locked
 ./target/release/tm-mumble-link
+./target/release/tm-mumble-link-tui
 ```
 
 The GUI uses wgpu and requires a working graphics driver (for example Vulkan).
@@ -78,3 +90,4 @@ the automated GUI test uses X11.
 Protocol references:
 [Mumble Link layout and naming](https://github.com/mumble-voip/mumble/blob/master/plugins/link/LinkedMem.h),
 [mumble-link Unix implementation](https://github.com/SpaceManiac/mumble-link-rs/blob/master/src/unix.rs).
+

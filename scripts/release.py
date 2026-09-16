@@ -71,7 +71,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def package(root, binary, platform):
+def package(root, binary, platform, tui_binary=None):
     version, _ = metadata(root)
     if not binary.is_file() or binary.stat().st_size == 0:
         raise ValueError('Release binary is missing or empty')
@@ -79,7 +79,13 @@ def package(root, binary, platform):
     out.mkdir(exist_ok=True)
     archive = out / archive_name(version, platform)
     executable = 'tm-mumble-link.exe' if platform.startswith('windows') else 'tm-mumble-link'
-    files = [(binary, executable)] + [(root / name, name) for name in DOCS]
+    files = [(binary, executable)]
+    if tui_binary is not None:
+        tui_name = 'tm-mumble-link-tui.exe' if platform.startswith('windows') else 'tm-mumble-link-tui'
+        if not tui_binary.is_file() or tui_binary.stat().st_size == 0:
+            raise ValueError('Release TUI binary is missing or empty')
+        files.append((tui_binary, tui_name))
+    files += [(root / name, name) for name in DOCS]
     if platform.startswith('linux'):
         with tarfile.open(archive, 'w:gz') as bundle:
             for source, name in files:
@@ -189,6 +195,7 @@ def main():
     pack = sub.add_parser('package')
     pack.add_argument('--platform', choices=PLATFORMS, required=True)
     pack.add_argument('--binary', type=Path, required=True)
+    pack.add_argument('--tui-binary', type=Path)
     sub.add_parser('publish')
     sub.add_parser('prepare')
     args = parser.parse_args()
@@ -208,10 +215,11 @@ def main():
             with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
                 stream.write(output)
     elif args.command == 'package':
-        print(package(root, args.binary, args.platform))
+        print(package(root, args.binary, args.platform, args.tui_binary))
     else:
         publish(root)
 
 
 if __name__ == '__main__':
     main()
+

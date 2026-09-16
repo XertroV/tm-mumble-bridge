@@ -55,6 +55,11 @@ class ReleaseTests(unittest.TestCase):
         with zipfile.ZipFile(windows) as bundle:
             self.assertEqual(set(bundle.namelist()), {'tm-mumble-link.exe', *release.DOCS})
         self.assertEqual(len(release.verify_assets(self.root / 'dist', '1.2.3')), 4)
+        tui = self.root / 'tui'
+        tui.write_bytes(b'tui fixture')
+        linux = release.package(self.root, self.binary, 'linux-x86_64', tui)
+        with tarfile.open(linux) as bundle:
+            self.assertEqual(bundle.extractfile('tm-mumble-link-tui').read(), b'tui fixture')
         linux.write_bytes(b'corrupted')
         with self.assertRaises(ValueError):
             release.verify_assets(self.root / 'dist', '1.2.3')
@@ -109,3 +114,4 @@ class ReleaseTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

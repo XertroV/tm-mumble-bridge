@@ -59,6 +59,12 @@ fn main() {
 
     log::info!("Starting TM to Mumble Link");
 
+    #[cfg(unix)]
+    if !prepare_linux_backend() {
+        log::error!("No usable graphical backend was found. Install Wayland/X11 runtime libraries or run tm-mumble-link-tui.");
+        return;
+    }
+
     let mut nat_opts = eframe::NativeOptions::default();
     nat_opts.centered = true;
     nat_opts.viewport = nat_opts
@@ -129,7 +135,7 @@ fn main() {
     let borrowed_to_gui_rx = &mut to_gui_rx;
     // let cloned_to_gui_tx = to_gui_tx.clone();
     let cloned_shutdown_tx = shutdown_tx.clone();
-    eframe::run_native(
+    let run_result = eframe::run_native(
         "TM to Mumble Link",
         nat_opts.clone(),
         // tray icon stuff via: https://github.com/emilk/egui/discussions/737#discussioncomment-8830140
@@ -225,8 +231,10 @@ fn main() {
                 cloned_shutdown_tx,
             )))
         }),
-    )
-    .expect("to run the app");
+    );
+    if let Err(error) = run_result {
+        log::error!("Could not start the graphical client: {error}. Run tm-mumble-link-tui for a display-free client.");
+    }
     // let null_tray_handler = move |_: TrayIconEvent| {};
     // TrayIconEvent::set_event_handler(Some(null_tray_handler));
     // let null_menu_handler = move |_: MenuEvent| {};
@@ -254,6 +262,38 @@ fn main() {
     //     println!("Waiting for window to be visible");
     // }
     // }
+}
+
+#[cfg(unix)]
+fn prepare_linux_backend() -> bool {
+    if let Ok(backend) = std::env::var("TM_MUMBLE_BACKEND") {
+        match backend.to_ascii_lowercase().as_str() {
+            "x11" => { std::env::set_var("WINIT_UNIX_BACKEND", "x11"); return true; }
+            "wayland" => { std::env::set_var("WINIT_UNIX_BACKEND", "wayland"); return true; }
+            other => log::warn!("Unknown TM_MUMBLE_BACKEND={other:?}; using automatic selection"),
+        }
+    }
+    // Winit prefers Wayland when WAYLAND_DISPLAY is present. If the runtime
+    // client library is absent (the reported NoWaylandLib panic), use XWayland
+    // when available instead of aborting during event-loop construction.
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() && !wayland_runtime_available() {
+        if std::env::var_os("DISPLAY").is_some() {
+            log::warn!("Wayland was requested but libwayland-client is unavailable; falling back to X11/XWayland");
+            std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(unix)]
+fn wayland_runtime_available() -> bool {
+    std::process::Command::new("ldconfig")
+        .arg("-p")
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains("libwayland-client.so"))
+        .unwrap_or(true)
 }
 
 pub fn is_window_visible() -> bool {
@@ -360,4 +400,5 @@ pub(crate) fn load_icon() -> egui::IconData {
         height: ICON_DATA.2,
     }
 }
+
 
