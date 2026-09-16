@@ -54,7 +54,7 @@ def wait_for(check, process, what):
     raise AssertionError(f"Timed out: {what}")
 
 
-def main(binary):
+def main(binary, env=None, pass_fds=()):
     assert sys.platform == "linux"
     assert c.sizeof(c.c_wchar) == 4
     assert c.sizeof(LinkedMem) == 10580
@@ -68,7 +68,7 @@ def main(binary):
     try:
         os.ftruncate(fd, c.sizeof(LinkedMem))
         with mmap.mmap(fd, c.sizeof(LinkedMem)) as memory, tempfile.TemporaryFile() as log:
-            process = subprocess.Popen([binary], stdout=log, stderr=log)
+            process = subprocess.Popen([binary], stdout=log, stderr=log, env=env, pass_fds=pass_fds)
             try:
                 def connect():
                     try:
@@ -79,7 +79,7 @@ def main(binary):
                 def snapshot():
                     return LinkedMem.from_buffer_copy(memory)
 
-                with wait_for(connect, process, "GUI selects TCP mode and starts listener") as sock:
+                with wait_for(connect, process, "client starts the TCP listener") as sock:
                     # Non-ASCII text distinguishes Linux wchar_t from Windows UTF-16.
                     send(sock, {"PlayerDetails": ["Racer 🏁é", "login"]})
                     send(sock, {"ServerDetails": ["test-server", "All"]})
@@ -116,7 +116,7 @@ def main(binary):
                     wait_for(lambda: snapshot().tick > tick, process, "leave-server context update")
                     state = snapshot()
                     assert bytes(state.context[:state.context_len]) == b"TM||All"
-                print("PASS: native GUI startup, framed TCP (JSON/binary), Linux Mumble ABI, Unicode, context")
+                print("PASS: native client startup, framed TCP (JSON/binary), Linux Mumble ABI, Unicode, context")
             finally:
                 process.terminate()
                 try:

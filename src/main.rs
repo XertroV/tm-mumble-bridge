@@ -230,6 +230,8 @@ fn main() {
     );
     if let Err(error) = run_result {
         log::error!("Could not start the graphical client: {error}. Run tm-mumble-link-tui for a display-free client.");
+        shutdown_tcp_server();
+        std::process::exit(1);
     }
     // let null_tray_handler = move |_: TrayIconEvent| {};
     // TrayIconEvent::set_event_handler(Some(null_tray_handler));
@@ -270,9 +272,11 @@ fn configure_linux_backend(options: &mut eframe::NativeOptions) {
         "x11" => Some("x11"),
         "wayland" => Some("wayland"),
         "" | "auto" => {
-            let wayland_requested = std::env::var_os("WAYLAND_DISPLAY").is_some()
-                || std::env::var_os("WAYLAND_SOCKET").is_some();
-            if wayland_requested {
+            // connect_to_env takes ownership of WAYLAND_SOCKET. Leave that
+            // one-shot descriptor untouched for Winit's real connection.
+            if std::env::var_os("WAYLAND_SOCKET").is_some() {
+                Some("wayland")
+            } else if std::env::var_os("WAYLAND_DISPLAY").is_some() {
                 match wayland_client::Connection::connect_to_env() {
                     Ok(_) => Some("wayland"),
                     Err(error) if std::env::var_os("DISPLAY").is_some() => {
@@ -406,5 +410,4 @@ pub(crate) fn load_icon() -> egui::IconData {
         height: ICON_DATA.2,
     }
 }
-
 
