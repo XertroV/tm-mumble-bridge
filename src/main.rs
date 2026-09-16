@@ -60,6 +60,8 @@ fn main() {
     log::info!("Starting TM to Mumble Link");
 
     let mut nat_opts = eframe::NativeOptions::default();
+    #[cfg(target_os = "linux")]
+    configure_linux_backend(&mut nat_opts);
     nat_opts.centered = true;
     nat_opts.viewport = nat_opts
         .viewport
@@ -129,9 +131,9 @@ fn main() {
     let borrowed_to_gui_rx = &mut to_gui_rx;
     // let cloned_to_gui_tx = to_gui_tx.clone();
     let cloned_shutdown_tx = shutdown_tx.clone();
-    eframe::run_native(
+    let run_result = eframe::run_native(
         "TM to Mumble Link",
-        nat_opts.clone(),
+        nat_opts,
         // tray icon stuff via: https://github.com/emilk/egui/discussions/737#discussioncomment-8830140
         Box::new(|_cc| {
             // if windows
@@ -225,8 +227,12 @@ fn main() {
                 cloned_shutdown_tx,
             )))
         }),
-    )
-    .expect("to run the app");
+    );
+    if let Err(error) = run_result {
+        log::error!("Could not start the graphical client: {error}. Run tm-mumble-link-tui for a display-free client.");
+        shutdown_tcp_server();
+        std::process::exit(1);
+    }
     // let null_tray_handler = move |_: TrayIconEvent| {};
     // TrayIconEvent::set_event_handler(Some(null_tray_handler));
     // let null_menu_handler = move |_: MenuEvent| {};
@@ -254,6 +260,50 @@ fn main() {
     //     println!("Waiting for window to be visible");
     // }
     // }
+}
+
+#[cfg(target_os = "linux")]
+fn configure_linux_backend(options: &mut eframe::NativeOptions) {
+    use winit::platform::wayland::EventLoopBuilderExtWayland;
+    use winit::platform::x11::EventLoopBuilderExtX11;
+
+    let requested = std::env::var("TM_MUMBLE_BACKEND").unwrap_or_default();
+    let backend = match requested.as_str() {
+        "x11" => Some("x11"),
+        "wayland" => Some("wayland"),
+        "" | "auto" => {
+            // connect_to_env takes ownership of WAYLAND_SOCKET. Leave that
+            // one-shot descriptor untouched for Winit's real connection.
+            if std::env::var_os("WAYLAND_SOCKET").is_some() {
+                Some("wayland")
+            } else if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                match wayland_client::Connection::connect_to_env() {
+                    Ok(_) => Some("wayland"),
+                    Err(error) if std::env::var_os("DISPLAY").is_some() => {
+                        log::warn!("Cannot connect to Wayland ({error}); trying X11/XWayland");
+                        Some("x11")
+                    }
+                    Err(error) => {
+                        log::warn!("Cannot connect to Wayland: {error}. Install libwayland-client or use tm-mumble-link-tui.");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+        other => {
+            log::warn!("Unknown TM_MUMBLE_BACKEND={other:?}; using automatic selection");
+            None
+        }
+    };
+    options.event_loop_builder = Some(Box::new(move |builder| {
+        match backend {
+            Some("x11") => { builder.with_x11(); }
+            Some("wayland") => { builder.with_wayland(); }
+            _ => {}
+        }
+    }));
 }
 
 pub fn is_window_visible() -> bool {

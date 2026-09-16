@@ -56,7 +56,7 @@ reusable build workflow as ordinary CI:
 - Linux x86_64 GNU on Ubuntu 24.04: `cargo test --locked`, optimized release build,
   and the GUI/TCP/Mumble shared-memory smoke test against the **release binary**.
 - Windows x86_64 MSVC: `cargo test --locked` and optimized release build.
-- Each job packages its binary with `README.md`, `LICENSE`, and this document,
+- Each job packages both `tm-mumble-link` (GUI) and `tm-mumble-link-tui` (headless terminal client) with `README.md`, `LICENSE`, and this document,
   creates a SHA-256 sidecar, and uploads Actions artifacts (retained for 14 days).
 
 After both succeed, the publisher downloads exactly four files:
@@ -69,7 +69,7 @@ After both succeed, the publisher downloads exactly four files:
 It validates their hashes, creates/updates a **draft** GitHub Release using the
 committed notes, uploads all assets, downloads them again to verify their bytes,
 and only then publishes. It checks the published release and assets once more.
-The Linux tarball preserves the binary's executable bit. The archives are not
+The Linux tarball preserves both binaries' executable bits. The `tm-mumble-link-tui` binary never initializes a graphical backend and is the supported choice for headless Linux, Wayland setups without XWayland, and SSH sessions. The archives are not
 static distributions: Linux requires glibc 2.39+ (Ubuntu 24.04 or compatible),
 desktop/graphics libraries described in README, and a working graphics driver.
 Windows builds are unsigned. Neither platform packages Mumble or Trackmania.
@@ -96,3 +96,4 @@ Windows builds are unsigned. Neither platform packages Mumble or Trackmania.
 A successful automated run verifies packaging and the Linux shared-memory
 integration. It does not verify audible in-game output with real players,
 Proton integration, Windows GUI behavior, or Wayland desktop behavior.
+
