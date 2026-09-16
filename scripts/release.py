@@ -115,6 +115,31 @@ def verify_assets(directory, version):
         path = directory / archive_name(version, platform)
         if path.stat().st_size == 0:
             raise ValueError('Empty archive')
+        required = {'tm-mumble-link', 'tm-mumble-link-tui'}
+        if platform.startswith('windows'):
+            required = {name + '.exe' for name in required}
+        try:
+            if platform.startswith('linux'):
+                with tarfile.open(path) as bundle:
+                    entries = {member.name: member for member in bundle.getmembers()}
+                if not required <= set(entries):
+                    raise ValueError(f'Missing executable(s) in {path.name}')
+                if any(not entries[name].isreg() or entries[name].mode & 0o111 == 0 for name in required):
+                    raise ValueError(f'Invalid executable metadata in {path.name}')
+            else:
+                with zipfile.ZipFile(path) as bundle:
+                    entries = {info.filename: info for info in bundle.infolist()}
+                if not required <= set(entries):
+                    raise ValueError(f'Missing executable(s) in {path.name}')
+                if any(info.is_dir() or (info.external_attr >> 16) & 0o170000 != 0o100000 for info in (entries[name] for name in required)):
+                    raise ValueError(f'Invalid executable metadata in {path.name}')
+            members = set(entries)
+            if not required <= members:
+                raise ValueError(f'Missing executable(s) in {path.name}')
+        except (tarfile.TarError, zipfile.BadZipFile, OSError) as error:
+            raise ValueError(f'Invalid archive: {path.name}') from error
+        if not required <= members:
+            raise ValueError(f'Missing executable(s) in {path.name}')
         sidecar = path.with_name(path.name + '.sha256').read_text(encoding='utf-8')
         if sidecar != f'{digest(path)}  {path.name}\n':
             raise ValueError(f'Checksum mismatch: {path.name}')
@@ -224,4 +249,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
