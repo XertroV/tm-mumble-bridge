@@ -26,6 +26,7 @@ fn main() {
                 let _ = to_server.send(FromGuiToServer::UseSocketServer());
                 socket_started = true;
             }
+            Ok(ToGUI::IsConnected(true)) => {}
             Ok(ToGUI::IsConnected(false)) => eprintln!("Mumble shared memory is unavailable; is Mumble running?"),
             Ok(ToGUI::MumbleError(error)) => eprintln!("Mumble: {error}"),
             Ok(ToGUI::ListeningOn(ip, port)) => eprintln!("Listening on {ip}:{port}"),
