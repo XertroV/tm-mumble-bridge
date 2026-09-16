@@ -10,6 +10,7 @@ use mumble_link::{MumbleLink, Position};
 use serde::{Deserialize, Serialize};
 
 use crate::app::{FromGuiToServer, ToGUI};
+#[cfg(windows)]
 use crate::maniaplanet_telemetry::run_mp_telemetry_loop;
 use crate::VISIBLE;
 
@@ -156,6 +157,7 @@ pub fn server_main(
 
     loop {
         match from_gui.try_recv() {
+            #[cfg(windows)]
             Ok(FromGuiToServer::UseManiaPlanetTelemetry()) => {
                 let _ = run_mp_telemetry_loop(&mumble, &to_gui);
                 return;
@@ -430,4 +432,38 @@ fn read_pos_msg(data: &[u8]) -> Result<FromTM, std::io::Error> {
     let c_up = read_vec3(&mut r)?;
     let c_pos = MPos::new(c_pos, c_dir, c_up);
     Ok(FromTM::Positions { p: pos, c: c_pos })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn position_packet() -> Vec<u8> {
+        let mut packet = vec![1];
+        for value in 1..=18 {
+            packet.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+        packet
+    }
+
+    #[test]
+    fn binary_positions_preserve_all_six_vectors() {
+        let message = read_pos_msg(&position_packet()).unwrap();
+        let player = message.get_pos_p().unwrap();
+        let camera = message.get_pos_c().unwrap();
+        assert_eq!(player.pos, [1.0, 2.0, 3.0]);
+        assert_eq!(player.dir, [4.0, 5.0, 6.0]);
+        assert_eq!(player.up, [7.0, 8.0, 9.0]);
+        assert_eq!(camera.pos, [10.0, 11.0, 12.0]);
+        assert_eq!(camera.dir, [13.0, 14.0, 15.0]);
+        assert_eq!(camera.up, [16.0, 17.0, 18.0]);
+    }
+
+    #[test]
+    fn truncated_positions_return_errors() {
+        let packet = position_packet();
+        for length in 0..packet.len() {
+            assert!(read_pos_msg(&packet[..length]).is_err(), "length {length}");
+        }
+    }
 }

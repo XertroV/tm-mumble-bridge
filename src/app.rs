@@ -16,6 +16,7 @@ use egui_extras::{Column, TableBuilder};
 use serde::{Deserialize, Serialize};
 
 pub const MUMBLE_SCALE_INV: f32 = 32.0;
+#[cfg(windows)]
 pub const MUMBLE_SCALE: f32 = 1.0 / 32.0;
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,7 @@ pub enum ToGUI {
     ListeningOn(String, u16),
     ProtocolError(String),
     FromTM(FromTM),
+    #[cfg(windows)]
     Telemetry(STelemetry),
     // HideMainWindow()
 }
@@ -38,6 +40,7 @@ impl From<FromTM> for ToGUI {
 
 pub enum FromGuiToServer {
     TryConnectMumble(),
+    #[cfg(windows)]
     UseManiaPlanetTelemetry(),
     UseSocketServer(),
     #[allow(unused)]
@@ -130,6 +133,7 @@ impl MumbleBridgeApp<'_> {
                     // ToGUI::TaskBarIconMsg(msg) => {
                     //     self.e_state.last_task_bar_msg = msg;
                     // },
+                    #[cfg(windows)]
                     ToGUI::Telemetry(telemetry) => {
                         self.telemetry.replace(telemetry);
                         // log::info!("Got telemetry: {:?}", telemetry.object);
@@ -253,6 +257,7 @@ impl MumbleBridgeApp<'_> {
                         ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(vec2(400.0, 240.0)));
                         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(400.0, 240.0)));
                     }
+                    #[cfg(windows)]
                     if ui.button("Use TM Telemetry").clicked() {
                         self.tx_gui
                             .get()
@@ -475,3 +480,4 @@ pub fn vecm(v: [f32; 3], m: f32) -> [f32; 3] {
 pub fn vec_flip_z(v: [f32; 3]) -> [f32; 3] {
     [v[0], v[1], -v[2]]
 }
+

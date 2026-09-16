@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{borrow::Borrow, sync::Mutex};
+use std::sync::Mutex;
+#[cfg(windows)]
+use std::borrow::Borrow;
 #[allow(unused_imports)]
 use std::thread;
 
@@ -16,6 +18,7 @@ use tcp_server::{shutdown_tcp_server, TCP_HANDLER};
 use lazy_static::lazy_static;
 // use shmem_bind::{self as shmem, ShmemBox, ShmemError};
 // use sysinfo::{ProcessRefreshKind, System};
+#[cfg(windows)]
 use tray_icon::{
     menu::{IsMenuItem, Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
@@ -27,6 +30,7 @@ use util::is_alt_held;
 
 mod app;
 mod tcp_server;
+#[cfg(windows)]
 mod maniaplanet_telemetry;
 pub mod mp_telemetry_data;
 mod util;
@@ -92,22 +96,26 @@ fn main() {
     let (to_gui_tx, mut to_gui_rx) = std::sync::mpsc::channel::<ToGUI>();
     let (from_gui_tx, from_gui_rx) = std::sync::mpsc::channel::<FromGuiToServer>();
 
-    let icon =
-        Icon::from_rgba(ICON_DATA.0.clone(), ICON_DATA.1, ICON_DATA.2).expect("to create icon");
-    let menu_entries = generate_menu_entries();
-    let tray_menu = Menu::with_items(
-        &menu_entries
-            .iter()
-            .map(|mi| mi.borrow())
-            .collect::<Vec<_>>(),
-    )
-    .expect("to create menu");
-    let _tray_icon = TrayIconBuilder::new()
-        .with_icon(icon)
-        .with_tooltip("TM to Mumble Link")
-        .with_menu(Box::new(tray_menu))
-        .build()
-        .expect("to build tray icon");
+    // Linux uses the normal window: tray-icon requires a separate GTK event loop.
+    #[cfg(windows)]
+    let _tray_icon = {
+        let icon =
+            Icon::from_rgba(ICON_DATA.0.clone(), ICON_DATA.1, ICON_DATA.2).expect("to create icon");
+        let menu_entries = generate_menu_entries();
+        let tray_menu = Menu::with_items(
+            &menu_entries
+                .iter()
+                .map(|mi| mi.borrow())
+                .collect::<Vec<_>>(),
+        )
+        .expect("to create menu");
+        TrayIconBuilder::new()
+            .with_icon(icon)
+            .with_tooltip("TM to Mumble Link")
+            .with_menu(Box::new(tray_menu))
+            .build()
+            .expect("to build tray icon")
+    };
 
     let to_gui_tx2 = to_gui_tx.clone();
     std::thread::spawn(|| {
@@ -162,6 +170,7 @@ fn main() {
                 // }
             }
 
+            #[cfg(windows)]
             MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
                 // println!("MenuEvent: {:?}", event);
                 // cloned_to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("MenuEvent: {:?}", event))).expect("to send to gui");
@@ -185,6 +194,7 @@ fn main() {
 
             // tray-icon crate
             // https://docs.rs/tray-icon/0.12.0/tray_icon/struct.TrayIconEvent.html#method.set_event_handler
+            #[cfg(windows)]
             TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
                 // println!("TrayIconEvent: {:?}", event);
                 // let _ = cloned_to_gui_tx.send(ToGUI::TaskBarIconMsg(format!("TrayIconEvent: {:?}", event))).expect("to send to gui");
@@ -307,10 +317,14 @@ pub fn set_window_visible(ctx: &Context, visible: bool) {
     println!("Window visible: {}", *VISIBLE.lock().unwrap());
 }
 
+#[cfg(windows)]
 const MID_SHOW: &str = "1";
+#[cfg(windows)]
 const MID_HIDE: &str = "2";
+#[cfg(windows)]
 const MID_EXIT: &str = "3";
 
+#[cfg(windows)]
 pub fn generate_menu_entries<'a>() -> Vec<Box<dyn IsMenuItem>> {
     vec![
         // Box::new(MenuItem::with_id(MID_SHOW, "Show", true, None)),
@@ -346,3 +360,4 @@ pub(crate) fn load_icon() -> egui::IconData {
         height: ICON_DATA.2,
     }
 }
+
