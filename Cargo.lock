@@ -3740,6 +3740,7 @@ dependencies = [
  "tray-icon",
  "windows 0.59.0",
  "windows-core 0.59.0",
+ "wayland-client",
  "winit",
  "winresource",
 ]
@@ -5158,3 +5159,5 @@ dependencies = [
  "quote",
  "syn 2.0.96",
 ]
+
+

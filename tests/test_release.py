@@ -60,6 +60,7 @@ class ReleaseTests(unittest.TestCase):
         linux = release.package(self.root, self.binary, 'linux-x86_64', tui)
         with tarfile.open(linux) as bundle:
             self.assertEqual(bundle.extractfile('tm-mumble-link-tui').read(), b'tui fixture')
+            self.assertEqual(bundle.getmember('tm-mumble-link-tui').mode, 0o755)
         linux.write_bytes(b'corrupted')
         with self.assertRaises(ValueError):
             release.verify_assets(self.root / 'dist', '1.2.3')

@@ -79,18 +79,20 @@ def package(root, binary, platform, tui_binary=None):
     out.mkdir(exist_ok=True)
     archive = out / archive_name(version, platform)
     executable = 'tm-mumble-link.exe' if platform.startswith('windows') else 'tm-mumble-link'
+    executable_names = {executable}
     files = [(binary, executable)]
     if tui_binary is not None:
         tui_name = 'tm-mumble-link-tui.exe' if platform.startswith('windows') else 'tm-mumble-link-tui'
         if not tui_binary.is_file() or tui_binary.stat().st_size == 0:
             raise ValueError('Release TUI binary is missing or empty')
         files.append((tui_binary, tui_name))
+        executable_names.add(tui_name)
     files += [(root / name, name) for name in DOCS]
     if platform.startswith('linux'):
         with tarfile.open(archive, 'w:gz') as bundle:
             for source, name in files:
                 info = bundle.gettarinfo(str(source), arcname=name)
-                info.mode = 0o755 if name == executable else 0o644
+                info.mode = 0o755 if name in executable_names else 0o644
                 with source.open('rb') as stream:
                     bundle.addfile(info, stream)
     else:
