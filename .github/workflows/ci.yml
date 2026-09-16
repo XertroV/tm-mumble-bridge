@@ -22,7 +22,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libvulkan1 mesa-vulkan-drivers xvfb
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libvulkan1 mesa-vulkan-drivers xvfb
       - run: cargo test --locked
       - run: cargo build --locked
       - name: Test native Linux GUI, TCP and Mumble shared memory together

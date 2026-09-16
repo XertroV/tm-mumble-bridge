@@ -40,7 +40,7 @@ Install a current stable Rust toolchain and the native build dependencies. On
 Debian/Ubuntu:
 
 ```sh
-sudo apt-get install build-essential pkg-config libxkbcommon-dev libwayland-dev
+sudo apt-get install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev
 cargo build --release --locked
 ./target/release/tm-mumble-link
 ```

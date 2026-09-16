@@ -16,6 +16,7 @@ use egui_extras::{Column, TableBuilder};
 use serde::{Deserialize, Serialize};
 
 pub const MUMBLE_SCALE_INV: f32 = 32.0;
+#[cfg(windows)]
 pub const MUMBLE_SCALE: f32 = 1.0 / 32.0;
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,7 @@ pub enum ToGUI {
     ListeningOn(String, u16),
     ProtocolError(String),
     FromTM(FromTM),
+    #[cfg(windows)]
     Telemetry(STelemetry),
     // HideMainWindow()
 }
@@ -131,6 +133,7 @@ impl MumbleBridgeApp<'_> {
                     // ToGUI::TaskBarIconMsg(msg) => {
                     //     self.e_state.last_task_bar_msg = msg;
                     // },
+                    #[cfg(windows)]
                     ToGUI::Telemetry(telemetry) => {
                         self.telemetry.replace(telemetry);
                         // log::info!("Got telemetry: {:?}", telemetry.object);
