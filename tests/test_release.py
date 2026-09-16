@@ -4,6 +4,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).parents[1] / 'scripts/release.py')
@@ -60,6 +61,22 @@ class ReleaseTests(unittest.TestCase):
         self.binary.unlink()
         with self.assertRaises(ValueError):
             release.package(self.root, self.binary, 'linux-x86_64')
+
+    def test_preparation_requires_matching_note_and_actual_version_bump(self):
+        before, after = 'a' * 40, 'b' * 40
+        with patch.object(release.subprocess, 'check_output', return_value='releases/v1.0.0.md\n'):
+            self.assertIsNone(release.preparation(self.root, before, after))
+        changed = 'Cargo.toml\nCargo.lock\nreleases/v1.2.3.md\n'
+        same_manifest = '[package]\nname="tm-mumble-link"\nversion="1.2.3"\n'
+        same_lock = '[[package]]\nname="tm-mumble-link"\nversion="1.2.3"\n'
+        with patch.object(release.subprocess, 'check_output', side_effect=[changed, same_manifest, same_lock]):
+            self.assertIsNone(release.preparation(self.root, before, after))
+        (self.root / 'releases').mkdir()
+        (self.root / 'releases/v1.2.3.md').write_text('# v1.2.3\n\nNew release.\n')
+        with patch.object(release.subprocess, 'check_output', side_effect=[
+            changed, same_manifest.replace('1.2.3', '1.2.2'), same_lock.replace('1.2.3', '1.2.2')
+        ]):
+            self.assertEqual(release.preparation(self.root, before, after), '1.2.3')
 
 
 if __name__ == '__main__':

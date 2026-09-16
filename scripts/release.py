@@ -36,6 +36,32 @@ def metadata(root=Path('.'), tag=None, require_notes=False):
     return version, notes
 
 
+def preparation(root, before, after):
+    """Only a matching version-bump push is an automatic release request."""
+    for sha in (before, after):
+        if not re.fullmatch(r"[0-9a-f]{40}", sha) or sha == "0" * 40:
+            raise ValueError("Release preparation needs existing before/after commits")
+    version, notes = metadata(root)
+    changed = set(subprocess.check_output(
+        ['git', 'diff', '--name-only', before, after], cwd=root, text=True
+    ).splitlines())
+    required = {'Cargo.toml', 'Cargo.lock', f'releases/v{version}.md'}
+    if not required <= changed:
+        return None
+    def old_toml(path):
+        return tomllib.loads(subprocess.check_output(
+            ['git', 'show', f'{before}:{path}'], cwd=root, text=True
+        ))
+    old_version = old_toml('Cargo.toml')['package']['version']
+    old_packages = [p for p in old_toml('Cargo.lock')['package'] if p['name'] == 'tm-mumble-link']
+    if len(old_packages) != 1 or old_packages[0]['version'] != old_version:
+        raise ValueError('Previous Cargo package versions differ')
+    if tuple(map(int, version.split('.'))) <= tuple(map(int, old_version.split('.'))):
+        return None
+    metadata(root, require_notes=True)
+    return version
+
+
 def archive_name(version, platform):
     return f'tm-mumble-link-v{version}-{platform}.{PLATFORMS[platform]}'
 
@@ -160,11 +186,19 @@ def main():
     pack.add_argument('--platform', choices=PLATFORMS, required=True)
     pack.add_argument('--binary', type=Path, required=True)
     sub.add_parser('publish')
+    sub.add_parser('prepare')
     args = parser.parse_args()
     root = Path('.')
     if args.command == 'metadata':
         version, _ = metadata(root, os.environ.get('RELEASE_TAG'), args.require_notes)
         output = f'version={version}\ntag=v{version}\n'
+        print(output, end='')
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                stream.write(output)
+    elif args.command == 'prepare':
+        version = preparation(root, os.environ['BEFORE_SHA'], os.environ['AFTER_SHA'])
+        output = 'ready=false\n' if version is None else f'ready=true\nversion={version}\ntag=v{version}\n'
         print(output, end='')
         if os.environ.get('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:

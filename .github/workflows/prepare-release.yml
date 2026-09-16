@@ -21,10 +21,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate committed version and release notes
+      - name: Validate matching version bump and changed release note
         id: version
-        run: python scripts/release.py metadata --require-notes
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: python scripts/release.py prepare
       - name: Create version tag and start Release
+        if: steps.version.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

@@ -29,8 +29,10 @@ through CI failures, review feedback, publishing, and final verification.
 There are two entry points using the same Release workflow:
 
 - **Prepared release PR (agent-friendly):** merging `releases/vX.Y.Z.md` to
-  `master` starts **Prepare release tag**. It validates both Cargo versions and
-  notes, creates `vX.Y.Z` at that exact merge commit, then dispatches **Release**
+  `master` starts **Prepare release tag**. It requires that push to change both
+  Cargo files to a higher matching package version and change that version’s note.
+  Historical note edits or pushes without that version bump do not release.
+  It validates the notes, creates `vX.Y.Z` at that exact merge commit, then dispatches **Release**
   on the tag. Merging release notes is an explicit request to publish that version.
   Do not add draft release-note files to `master` ahead of the release.
 - **Existing prepared commit:** push a new version tag on a commit already merged
