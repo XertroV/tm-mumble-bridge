@@ -1,0 +1,57 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+# prepare-release dispatches on the tag: GITHUB_TOKEN tag pushes do not trigger runs.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate version, notes, and merged tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_TYPE" = tag
+          python scripts/release.py metadata --require-notes
+          git merge-base --is-ancestor HEAD origin/master
+  build:
+    needs: validate
+    uses: ./.github/workflows/build.yml
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tm-mumble-link-*
+          merge-multiple: true
+          path: dist
+      - name: Publish only after both platforms pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/release.py publish

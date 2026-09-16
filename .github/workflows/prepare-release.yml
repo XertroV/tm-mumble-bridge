@@ -1,0 +1,46 @@
+name: Prepare release tag
+# Merging a version bump and reviewed release notes is an optional release request.
+on:
+  push:
+    branches: [master]
+    paths: ['releases/*.md']
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate matching version bump and changed release note
+        id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: python scripts/release.py prepare
+      - name: Create version tag and start Release
+        if: steps.version.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA" || {
+              echo "Tag already belongs to another commit; prepare a new version." >&2
+              exit 1
+            }
+          else
+            gh api "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          fi
+          gh workflow run release.yml --ref "$RELEASE_TAG"
