@@ -38,6 +38,7 @@ impl From<FromTM> for ToGUI {
 
 pub enum FromGuiToServer {
     TryConnectMumble(),
+    #[cfg(windows)]
     UseManiaPlanetTelemetry(),
     UseSocketServer(),
     #[allow(unused)]
@@ -253,6 +254,7 @@ impl MumbleBridgeApp<'_> {
                         ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(vec2(400.0, 240.0)));
                         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(400.0, 240.0)));
                     }
+                    #[cfg(windows)]
                     if ui.button("Use TM Telemetry").clicked() {
                         self.tx_gui
                             .get()
@@ -475,3 +477,4 @@ pub fn vecm(v: [f32; 3], m: f32) -> [f32; 3] {
 pub fn vec_flip_z(v: [f32; 3]) -> [f32; 3] {
     [v[0], v[1], -v[2]]
 }
+
